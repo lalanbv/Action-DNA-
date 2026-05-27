@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 *.egg-info/
 *.egg
+dist-info/
 
 # Virtual environment
 .venv/
@@ -20,6 +21,7 @@ dist/
 .idea/
 *.swp
 *.swo
+*~
 
 # Type checking / linting / testing cache
 .mypy_cache/

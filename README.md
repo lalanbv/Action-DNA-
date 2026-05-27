@@ -51,6 +51,71 @@ python main.py
 4. 保存配置 → 下次可直接加载
 5. 点击「启动」循环执行
 
+## 一键打包
+
+项目内置 PyInstaller 打包脚本，可将应用打包为独立可执行文件，无需用户安装 Python。
+
+### 前置要求
+
+- Python 3.11 ~ 3.14+（3.11、3.12、3.13、3.14 均已测试兼容）
+- macOS 12+ 或 Windows 10/11
+- 约 1 GB 磁盘空间（构建临时文件 + 产出）
+
+### macOS
+
+```bash
+# 赋予执行权限（仅需一次）
+chmod +x build_mac.sh
+
+# 执行打包
+./build_mac.sh
+```
+
+脚本会自动：检测 Python 版本 → 创建隔离构建环境 → 安装依赖 → 执行打包 → 验证产出。
+
+打包完成后：
+
+- 产出目录：`dist/Action-DNA/`
+- 启动方式：`open dist/Action-DNA/Action-DNA.app`
+- 分发方式：将 `dist/Action-DNA/` 压缩为 `.zip`
+
+### Windows
+
+```cmd
+:: 双击运行或在 cmd 中执行
+build_windows.bat
+```
+
+脚本会自动：搜索 Python 3.11+ → 创建隔离构建环境 → 安装依赖 → 生成 .spec → 打包 → 验证产出。
+
+打包完成后：
+
+- 产出目录：`dist\Action-DNA\`
+- 启动方式：`dist\Action-DNA\Action-DNA.exe`
+- 分发方式：将 `dist\Action-DNA\` 压缩为 `.zip`
+
+### 打包说明
+
+| 项目 | 说明 |
+| --- | --- |
+| 打包工具 | PyInstaller（自动安装最新版） |
+| 构建环境 | 独立虚拟环境 `.venv_build/`，不影响开发环境 |
+| Python 版本 | 3.11 / 3.12 / 3.13 / 3.14 全部兼容 |
+| 数据文件 | `config/`、`assets/`、翻译文件自动检测并打包 |
+| OCR 支持 | 安装 `rapidocr_onnxruntime` 后打包即包含 OCR，否则自动降级 |
+| 架构适配 | macOS: Apple Silicon + Intel 自动识别；Windows: x64 |
+| 版本迁移 | 切换 Python 版本后自动重建虚拟环境 |
+
+### 常见问题
+
+| 问题 | 解决方案 |
+| --- | --- |
+| macOS 提示"无法验证开发者" | 系统设置 > 隐私与安全性 > 允许 |
+| Windows Defender 误报 | 选择"仍要运行"，或将 `dist/` 目录加入排除项 |
+| 找不到 Python | macOS: `brew install python@3.12`；Windows: 安装时勾选 "Add Python to PATH" |
+| 想包含 OCR | 打包前执行 `pip install rapidocr_onnxruntime`，再运行打包脚本 |
+| 构建环境损坏 | 删除 `.venv_build/` 目录后重新执行打包脚本 |
+
 ## 架构
 
 ```
