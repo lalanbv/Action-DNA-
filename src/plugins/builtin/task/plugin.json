@@ -1,0 +1,19 @@
+{
+    "plugin_id": "task",
+    "plugin_name": "任务自动化",
+    "version": "1.0.0",
+    "description": "任务自动化节点：接取任务、对话交互、完成任务、日常重置",
+    "author": "Action<DNA> Team",
+    "entry_class": "TaskPlugin",
+    "dependencies": [
+        "navigation"
+    ],
+    "permissions": [
+        "screen_capture",
+        "template_matcher",
+        "input_control",
+        "events"
+    ],
+    "min_app_version": "2.0.0",
+    "enabled": true
+}

@@ -1,0 +1,87 @@
+{
+  "app_version": "2.0.0",
+  "window": {
+    "title": "Action<DNA>",
+    "capture_rect": null
+  },
+  "combat": {
+    "auto_combat": true,
+    "skill_interval": 2.0,
+    "dodge_enabled": true,
+    "heal_threshold": 0.3
+  },
+  "task": {
+    "auto_accept_quest": true,
+    "auto_complete_quest": true,
+    "auto_dialog": true,
+    "dialog_delay": 1.5
+  },
+  "schedule": {
+    "loop_interval": 0.5,
+    "monitor_check_interval": 1.0,
+    "monitor_poll_timeout": 0.1,
+    "engine_pause_poll_timeout": 0.1,
+    "rest_after_minutes": 60,
+    "rest_duration": 5,
+    "monitor_poll_ms": 500,
+    "frame_cache_ttl": 0.03,
+    "max_consecutive_failures": 5
+  },
+  "editor": {
+    "theme_mode": "system"
+  },
+  "language": {
+    "language": "zh"
+  },
+  "hotkey": {
+    "start_stop": {
+      "key_combination": "ctrl+shift+f5",
+      "enabled": true,
+      "use_global": true
+    },
+    "pause": {
+      "key_combination": "ctrl+shift+f6",
+      "enabled": true,
+      "use_global": true
+    },
+    "step": {
+      "key_combination": "ctrl+shift+f7",
+      "enabled": true,
+      "use_global": true
+    },
+    "emergency_stop": {
+      "key_combination": "ctrl+shift+f12",
+      "enabled": true,
+      "use_global": true
+    }
+  },
+  "notification": {
+    "channels": {
+      "system_notify": {
+        "enabled": true,
+        "url": "",
+        "channel_type": "generic",
+        "secret": "",
+        "timeout": 5
+      },
+      "sound": {
+        "enabled": true,
+        "url": "",
+        "channel_type": "generic",
+        "secret": "",
+        "timeout": 5
+      },
+      "webhook": {
+        "enabled": true,
+        "url": "",
+        "channel_type": "generic",
+        "secret": "",
+        "timeout": 5
+      }
+    },
+    "rules": []
+  },
+  "schedule_list": {
+    "schedules": []
+  }
+}

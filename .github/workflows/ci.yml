@@ -1,0 +1,50 @@
+name: Action<DNA> CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        run: |
+          pylint src/core/variables src/core/events src/core/io src/core/error src/core/engine --disable=C,R
+          mypy src/core/variables src/core/events src/core/io src/core/error src/core/engine --ignore-missing-imports
+
+      - name: Unit tests
+        run: pytest tests/unit/ -v --cov=src/core/variables --cov=src/core/events --cov=src/core/engine --cov-report=term-missing
+
+      - name: Integration tests
+        run: pytest tests/integration/ -v
+
+      - name: Benchmarks (smoke)
+        run: python -m benchmarks.bench_all
+
+      - name: Memory check
+        run: python -m benchmarks.bench_memory
+
+      - name: Coverage check
+        run: pytest tests/unit/ tests/integration/ --cov=src/core/variables --cov=src/core/events --cov=src/core/engine --cov=src/core/io --cov-fail-under=80

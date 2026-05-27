@@ -1,0 +1,58 @@
+[project]
+name = "action-dna"
+version = "0.1.0"
+description = "Action<DNA> — 自动化工作流引擎"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "mss>=9.0.0",
+    "pyautogui>=0.9.54",
+    "Pillow>=10.0.0",
+    "pynput>=1.7.6",
+    "keyboard>=0.13.5; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+ocr = ["rapidocr_onnxruntime"]
+qt = ["PySide6>=6.10.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --timeout=60"
+markers = [
+    "unit: Unit tests (isolated, no external dependencies)",
+    "integration: Integration tests (multiple components)",
+    "e2e: End-to-end tests (full system)",
+    "slow: Tests that take > 1 second",
+]
+
+[tool.pylint]
+generated-members = ["cv2"]
+
+[tool.pylint.messages_control]
+disable = ["C", "R"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/panel/*",                              # GUI — requires display
+    "src/core/_vision_legacy.py",               # legacy compat wrapper
+    "src/core/config.py",                       # file I/O config loader
+    "src/core/input_controller.py",             # hardware I/O (mouse/keyboard)
+    "src/core/input/global_hotkey_backend.py",  # platform-specific hotkey hooks
+    "src/core/monitor.py",                      # screen monitoring hardware
+    "src/core/screen_guard.py",                 # hardware-dependent screensaver detect
+    "src/main.py",                              # entry point
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
+[tool.mypy]
+ignore_missing_imports = true
+python_version = "3.11"

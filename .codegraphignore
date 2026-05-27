@@ -1,0 +1,46 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Type checking / linting / testing cache
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyrightconfig.json
+.coverage
+htmlcov/
+
+# CodeGraph own index
+.codegraph/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Non-code project files
+.claude/
+.github/
+
+# Runtime generated
+profiles/
+assets/logs/

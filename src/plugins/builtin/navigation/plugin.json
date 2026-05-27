@@ -1,0 +1,19 @@
+{
+    "plugin_id": "navigation",
+    "plugin_name": "地图导航",
+    "version": "1.0.0",
+    "description": "地图导航节点：移动、传送、路径跟随、区域切换",
+    "author": "Action<DNA> Team",
+    "entry_class": "NavigationPlugin",
+    "dependencies": [
+        "combat"
+    ],
+    "permissions": [
+        "screen_capture",
+        "template_matcher",
+        "input_control",
+        "events"
+    ],
+    "min_app_version": "2.0.0",
+    "enabled": true
+}

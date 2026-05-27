@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# Virtual environment
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Type checking / linting
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyrightconfig.json
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
+assets/logs/*.log
+
+# Runtime generated
+profiles/
+
+# Environment
+.env
+
+# CodeGraph index (local only)
+.codegraph/
+
+# Claude Code local settings (per-developer)
+.claude/

@@ -1,0 +1,16 @@
+{
+    "plugin_id": "combat",
+    "plugin_name": "战斗辅助",
+    "version": "1.0.0",
+    "description": "自动战斗节点：找怪、攻击、技能、闪避",
+    "author": "Action<DNA> Team",
+    "entry_class": "CombatPlugin",
+    "dependencies": [],
+    "permissions": [
+        "screen_capture",
+        "template_matcher",
+        "input_control",
+        "events"
+    ],
+    "min_app_version": "2.0.0"
+}
