@@ -53,4 +53,5 @@ def open_step_dialog(parent, step, title: str, on_done) -> None:
     dlg_cls = _QT_DIALOG_MAP.get(step.action_type)
     if dlg_cls is None:
         raise ValueError(f"未注册的 ActionType: {step.action_type}")
-    dlg_cls(parent, title=title, action=step, callback=on_done)
+    dlg = dlg_cls(parent, title=title, action=step, callback=on_done)
+    dlg.open()
