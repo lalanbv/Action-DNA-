@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QPainter, QPainterPath, QTransform, QWheelEvent
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QTransform, QWheelEvent
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
 from PySide6.QtGui import QMouseEvent, QKeyEvent
@@ -94,6 +95,9 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
 
         self._minimap: QtMinimap | None = None
         self._floating_controls: QtFloatingControls | None = None
+
+        self._last_right_click_time: float = 0.0
+        self._temp_edge: QGraphicsPathItem | None = None
 
     @property
     def scene(self) -> QGraphicsScene:
@@ -341,7 +345,13 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
     # ── Wheel zoom ─────────────────────────────────────────
 
     def wheelEvent(self, event: QWheelEvent) -> None:
+        if time.monotonic() - self._last_right_click_time < 0.3:
+            event.accept()
+            return
         delta = event.angleDelta().y()
+        if abs(delta) < 8:
+            event.accept()
+            return
         factor = 1.15 if delta > 0 else 1 / 1.15
         pos = event.position()
         self.zoom_at(pos.x(), pos.y(), factor)
@@ -555,6 +565,36 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
         self._stop_edge_animation()
         self.clear_graph()
 
+    # ── Temp edge (connection preview) ───────────────────────
+
+    def _draw_temp_edge(self, from_x: float, from_y: float, to_x: float, to_y: float) -> None:
+        from PySide6.QtWidgets import QGraphicsPathItem
+        if self._temp_edge is None:
+            self._temp_edge = QGraphicsPathItem()
+            self._temp_edge.setZValue(100)
+            pen = QPen(QColor(self._cached_theme.accent_blue), 2, Qt.PenStyle.DashLine)
+            self._temp_edge.setPen(pen)
+            self._scene.addItem(self._temp_edge)
+        path = QPainterPath(QPointF(from_x, from_y))
+        dx = to_x - from_x
+        dy = to_y - from_y
+        dist = (dx * dx + dy * dy) ** 0.5
+        if dist < 1:
+            path.lineTo(to_x, to_y)
+        else:
+            ctrl_offset = max(25, dist * 0.35)
+            path.cubicTo(
+                QPointF(from_x, from_y + ctrl_offset),
+                QPointF(to_x, to_y - ctrl_offset),
+                QPointF(to_x, to_y),
+            )
+        self._temp_edge.setPath(path)
+
+    def _clear_temp_edge(self) -> None:
+        if self._temp_edge:
+            self._scene.removeItem(self._temp_edge)
+            self._temp_edge = None
+
     # ── Edge animation (simple timer-based) ────────────────
 
     def set_execution_state(self, state) -> None:
@@ -601,16 +641,22 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
     # ── Qt event overrides (forward to interaction handler) ─
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.RightButton:
+            self._last_right_click_time = time.monotonic()
         self._interaction.handle_mouse_press(event)
+        event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._interaction.handle_mouse_move(event)
+        event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._interaction.handle_mouse_release(event)
+        event.accept()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         self._interaction.handle_double_click(event)
+        event.accept()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         self._interaction.handle_key_press(event)
@@ -643,5 +689,17 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
             case "toggle_minimap":
                 if hasattr(self, '_minimap') and self._minimap:
                     self._minimap.toggle()
+            case "temp_edge":
+                self._draw_temp_edge(**kwargs)
+            case "temp_edge_clear":
+                self._clear_temp_edge()
+            case "auto_insert_preview":
+                self.set_auto_insert_highlight(kwargs.get("edge_id"))
+            case "auto_insert_clear":
+                self.set_auto_insert_highlight(None)
+            case "auto_insert":
+                self._clear_temp_edge()
+                self.set_auto_insert_highlight(None)
+                self._event_callback("auto_insert", **kwargs)
             case _:
                 self._event_callback(event_type, **kwargs)

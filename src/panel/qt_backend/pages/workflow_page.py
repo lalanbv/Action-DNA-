@@ -7,10 +7,9 @@ MVC: WorkflowController/ChainModel 不变。
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel,
-    QPlainTextEdit, QSplitter, QTabWidget, QToolBar,
+    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
+    QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTabWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -99,132 +98,140 @@ class QtWorkflowPage(
         th = current_theme()
         sm = qt_scale_manager()
 
+        btn_style = (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"padding: 4px 8px; color: {th.text_primary}; }}"
+            f"QPushButton:hover {{ background: {th.bg_surface_hover}; border-radius: 3px; }}"
+            f"QPushButton:checked {{ background: {th.bg_surface_hover}; border-radius: 3px; }}"
+            f"QPushButton:disabled {{ color: {th.text_muted}; }}"
+        )
+
+        def _tb(text: str, handler, checkable: bool = False, checked: bool = False) -> QPushButton:
+            b = QPushButton(text)
+            b.setCheckable(checkable)
+            b.setChecked(checked)
+            b.setStyleSheet(btn_style)
+            b.clicked.connect(handler)
+            return b
+
+        def _sep() -> QFrame:
+            f = QFrame()
+            f.setFrameShape(QFrame.Shape.VLine)
+            f.setStyleSheet(f"color: {th.border_default};")
+            return f
+
         # 第一行：导航 + 配置 + 循环 + 区域 + 运行控制
-        toolbar1 = QToolBar()
-        toolbar1.setMovable(False)
-        toolbar1.setStyleSheet(f"background-color: {th.panel_bg}; border: none;")
+        toolbar1 = QWidget()
+        toolbar1.setObjectName("workflowToolbar1")
+        toolbar1.setStyleSheet(f"QWidget#workflowToolbar1 {{ background-color: {th.panel_bg}; border: none; }}")
+        lay1 = QHBoxLayout(toolbar1)
+        lay1.setContentsMargins(4, 2, 4, 2)
+        lay1.setSpacing(2)
 
-        back_action = QAction(t("common.back"), self)
-        back_action.triggered.connect(self._go_home)
-        toolbar1.addAction(back_action)
-        toolbar1.addWidget(QLabel(t("workflow.title")))
-
-        toolbar1.addSeparator()
+        lay1.addWidget(_tb(t("common.back"), self._go_home))
+        lay1.addWidget(QLabel(t("workflow.title")))
+        lay1.addWidget(_sep())
 
         self._profile_combo = QComboBox()
         self._profile_combo.setMinimumWidth(sm.s(120))
-        toolbar1.addWidget(self._profile_combo)
+        self._profile_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon,
+        )
+        lay1.addWidget(self._profile_combo)
 
         for label, handler in [
             (t("common.load"), self._on_load_profile),
             (t("common.save"), self._on_save_profile),
             (t("common.save_as"), self._on_save_as_profile),
             (t("common.delete"), self._on_delete_profile),
+            (t("chain.export"), self._on_export_script),
         ]:
-            act = QAction(label, self)
-            act.triggered.connect(handler)
-            toolbar1.addAction(act)
+            lay1.addWidget(_tb(label, handler))
 
-        toolbar1.addSeparator()
+        lay1.addWidget(_sep())
 
         self._loop_cb = QCheckBox(t("common.infinite_loop"))
         self._loop_cb.setChecked(True)
         self._loop_cb.stateChanged.connect(self._on_loop_toggled)
-        toolbar1.addWidget(self._loop_cb)
+        lay1.addWidget(self._loop_cb)
 
-        toolbar1.addSeparator()
+        lay1.addWidget(_sep())
 
-        fullscreen_action = QAction(t("chain.region.fullscreen"), self)
-        fullscreen_action.triggered.connect(self._on_fullscreen)
-        toolbar1.addAction(fullscreen_action)
-        pick_region_action = QAction(t("chain.region.pick"), self)
-        pick_region_action.triggered.connect(self._on_pick_region)
-        toolbar1.addAction(pick_region_action)
+        lay1.addWidget(_tb(t("chain.region.fullscreen"), self._on_fullscreen))
+        lay1.addWidget(_tb(t("chain.region.pick"), self._on_pick_region))
 
         spacer = QWidget()
-        spacer.setSizePolicy(spacer.sizePolicy().horizontalPolicy().Expanding,
-                             spacer.sizePolicy().verticalPolicy().Preferred)
-        toolbar1.addWidget(spacer)
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        lay1.addWidget(spacer)
 
-        self._run_actions: list[QAction] = []
+        self._run_actions: list[QPushButton] = []
         for label, handler in [
             (t("common.start"), self._on_start),
             (t("common.pause"), self._on_pause),
             (t("common.resume"), self._on_resume),
             (t("common.stop"), self._on_stop),
         ]:
-            act = QAction(label, self)
-            act.triggered.connect(handler)
-            toolbar1.addAction(act)
-            self._run_actions.append(act)
+            btn = _tb(label, handler)
+            lay1.addWidget(btn)
+            self._run_actions.append(btn)
 
         # 第二行：编辑 + 边样式 + 视图切换 + 调试
-        toolbar2 = QToolBar()
-        toolbar2.setMovable(False)
-        toolbar2.setStyleSheet(f"background-color: {th.panel_bg}; border: none;")
+        toolbar2 = QWidget()
+        toolbar2.setObjectName("workflowToolbar2")
+        toolbar2.setStyleSheet(f"QWidget#workflowToolbar2 {{ background-color: {th.panel_bg}; border: none; }}")
+        lay2 = QHBoxLayout(toolbar2)
+        lay2.setContentsMargins(4, 2, 4, 2)
+        lay2.setSpacing(2)
 
-        self._undo_action = QAction(t("workflow.undo"), self)
-        self._undo_action.triggered.connect(self._on_undo)
+        self._undo_action = _tb(t("workflow.undo"), self._on_undo)
         self._undo_action.setEnabled(False)
-        toolbar2.addAction(self._undo_action)
+        lay2.addWidget(self._undo_action)
 
-        self._redo_action = QAction(t("workflow.redo"), self)
-        self._redo_action.triggered.connect(self._on_redo)
+        self._redo_action = _tb(t("workflow.redo"), self._on_redo)
         self._redo_action.setEnabled(False)
-        toolbar2.addAction(self._redo_action)
+        lay2.addWidget(self._redo_action)
 
-        toolbar2.addSeparator()
+        lay2.addWidget(_sep())
 
         self._edge_style_combo = QComboBox()
+        self._edge_style_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents,
+        )
         for style in EdgeStyle:
             self._edge_style_combo.addItem(t(f"workflow.edge_style.{style.value}"), style)
         self._edge_style_combo.currentIndexChanged.connect(self._on_edge_style_changed)
-        toolbar2.addWidget(self._edge_style_combo)
+        lay2.addWidget(self._edge_style_combo)
 
-        toolbar2.addSeparator()
+        lay2.addWidget(_sep())
 
-        self._palette_action = QAction(t("workflow.toolbar.palette"), self)
-        self._palette_action.setCheckable(True)
-        self._palette_action.setChecked(True)
-        self._palette_action.triggered.connect(self._toggle_palette)
-        toolbar2.addAction(self._palette_action)
+        self._palette_action = _tb(t("workflow.toolbar.palette"), self._toggle_palette, checkable=True, checked=True)
+        lay2.addWidget(self._palette_action)
 
-        self._props_action = QAction(t("workflow.toolbar.properties"), self)
-        self._props_action.setCheckable(True)
-        self._props_action.setChecked(False)
-        self._props_action.triggered.connect(self._toggle_props)
-        toolbar2.addAction(self._props_action)
+        self._props_action = _tb(t("workflow.toolbar.properties"), self._toggle_props, checkable=True, checked=False)
+        lay2.addWidget(self._props_action)
 
-        self._log_action = QAction(t("common.log"), self)
-        self._log_action.setCheckable(True)
-        self._log_action.setChecked(True)
-        self._log_action.triggered.connect(self._toggle_log)
-        toolbar2.addAction(self._log_action)
+        self._log_action = _tb(t("common.log"), self._toggle_log, checkable=True, checked=True)
+        lay2.addWidget(self._log_action)
 
-        toolbar2.addSeparator()
+        lay2.addWidget(_sep())
 
-        self._debug_toggle_action = QAction(t("workflow.debug.toggle"), self)
-        self._debug_toggle_action.triggered.connect(self._on_debug_toggle)
-        toolbar2.addAction(self._debug_toggle_action)
+        self._debug_toggle_action = _tb(t("workflow.debug.toggle"), self._on_debug_toggle)
+        lay2.addWidget(self._debug_toggle_action)
 
-        self._breakpoint_action = QAction(t("workflow.debug.breakpoint"), self)
-        self._breakpoint_action.triggered.connect(self._on_toggle_breakpoint)
-        toolbar2.addAction(self._breakpoint_action)
+        self._breakpoint_action = _tb(t("workflow.debug.breakpoint"), self._on_toggle_breakpoint)
+        lay2.addWidget(self._breakpoint_action)
 
-        self._step_action = QAction(t("workflow.debug.step_over"), self)
-        self._step_action.triggered.connect(self._on_debug_step)
+        self._step_action = _tb(t("workflow.debug.step_over"), self._on_debug_step)
         self._step_action.setEnabled(False)
-        toolbar2.addAction(self._step_action)
+        lay2.addWidget(self._step_action)
 
-        self._debug_resume_action = QAction(t("workflow.debug.resume"), self)
-        self._debug_resume_action.triggered.connect(self._on_debug_resume)
+        self._debug_resume_action = _tb(t("workflow.debug.resume"), self._on_debug_resume)
         self._debug_resume_action.setEnabled(False)
-        toolbar2.addAction(self._debug_resume_action)
+        lay2.addWidget(self._debug_resume_action)
 
-        self._debug_stop_action = QAction(t("workflow.debug.stop"), self)
-        self._debug_stop_action.triggered.connect(self._on_debug_stop)
+        self._debug_stop_action = _tb(t("workflow.debug.stop"), self._on_debug_stop)
         self._debug_stop_action.setEnabled(False)
-        toolbar2.addAction(self._debug_stop_action)
+        lay2.addWidget(self._debug_stop_action)
 
         self._controller.undo_manager.on_change(self._on_undo_state_changed)
         self._on_undo_state_changed()
@@ -257,24 +264,47 @@ class QtWorkflowPage(
 
     def _toggle_palette(self) -> None:
         new_mode = "hidden" if self._palette_mode == "full" else "full"
-        if new_mode == "hidden" and self._palette_widget is not None:
-            self._palette_widget.setVisible(False)
-        elif new_mode == "full" and self._palette_widget is not None:
-            self._palette_widget.setVisible(True)
         self._palette_mode = new_mode
+        if self._palette_widget is not None:
+            self._palette_widget.setVisible(new_mode != "hidden")
         self._palette_action.setChecked(new_mode != "hidden")
+        self._redistribute_hsplitter()
 
     def _toggle_props(self) -> None:
         self._props_visible = not self._props_visible
         if self._props_scroll is not None:
             self._props_scroll.setVisible(self._props_visible)
         self._props_action.setChecked(self._props_visible)
+        self._redistribute_hsplitter()
 
     def _toggle_log(self) -> None:
         self._log_visible = not self._log_visible
         if self._log_container is not None:
             self._log_container.setVisible(self._log_visible)
         self._log_action.setChecked(self._log_visible)
+        self._redistribute_vsplitter()
+
+    def _redistribute_hsplitter(self) -> None:
+        """重新分配水平分割器空间：隐藏的面板设为 0，画布占据剩余空间。"""
+        if not hasattr(self, "_hsplitter"):
+            return
+        sizes = []
+        palette_w = 0 if self._palette_mode == "hidden" else self._palette_widget.sizeHint().width()
+        props_w = 0 if not self._props_visible else self._props_scroll.sizeHint().width()
+        canvas_w = max(200, self._hsplitter.width() - palette_w - props_w)
+        sizes = [palette_w, canvas_w, props_w]
+        self._hsplitter.setSizes(sizes)
+
+    def _redistribute_vsplitter(self) -> None:
+        """重新分配垂直分割器空间：隐藏的日志区设为 0。"""
+        if not hasattr(self, "_vsplitter"):
+            return
+        main_h = max(200, self._vsplitter.height())
+        log_h = 0 if not self._log_visible else min(200, self._vsplitter.height() // 4)
+        if not self._log_visible:
+            self._vsplitter.setSizes([main_h, 0])
+        else:
+            self._vsplitter.setSizes([main_h - log_h, log_h])
 
     # ── 主区域 ──────────────────────────────────────────────
 
@@ -388,6 +418,34 @@ class QtWorkflowPage(
         self._controller.set_fullscreen()
         self._append_log(t("workflow.msg.fullscreen"))
 
+    def _on_export_script(self):
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog
+        from src.core.io.script_exporter import ScriptExporter
+
+        graph = self._model.graph
+        if not graph or not graph.nodes:
+            self._show_warning(t("chain.export"), t("workflow.msg.start_failed"))
+            return
+
+        name = self._model.current_profile_name or "untitled"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            t("chain.msg.export_title"),
+            f"{name}.py",
+            "Python (*.py);;All (*)",
+        )
+        if not path:
+            return
+
+        try:
+            exporter = ScriptExporter()
+            result = exporter.export(graph, Path(path), profile_name=name)
+            self._append_log(t("chain.msg.exported").format(path=str(result.output_path)))
+        except Exception as e:
+            logger.exception("Script export failed")
+            self._show_error(t("chain.export"), t("chain.msg.export_failed"))
+
     # ── 缩放 ──────────────────────────────────────────────
 
     def _zoom_in(self):
@@ -488,10 +546,22 @@ class QtWorkflowPage(
         super().apply_theme()
         th = current_theme()
 
+        btn_style = (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"padding: 4px 8px; color: {th.text_primary}; }}"
+            f"QPushButton:hover {{ background: {th.bg_surface_hover}; border-radius: 3px; }}"
+            f"QPushButton:checked {{ background: {th.bg_surface_hover}; border-radius: 3px; }}"
+            f"QPushButton:disabled {{ color: {th.text_muted}; }}"
+        )
+
         if hasattr(self, "_toolbar1"):
-            self._toolbar1.setStyleSheet(f"background-color: {th.panel_bg}; border: none;")
+            self._toolbar1.setStyleSheet(f"QWidget#workflowToolbar1 {{ background-color: {th.panel_bg}; border: none; }}")
+            for btn in self._toolbar1.findChildren(QPushButton):
+                btn.setStyleSheet(btn_style)
         if hasattr(self, "_toolbar2"):
-            self._toolbar2.setStyleSheet(f"background-color: {th.panel_bg}; border: none;")
+            self._toolbar2.setStyleSheet(f"QWidget#workflowToolbar2 {{ background-color: {th.panel_bg}; border: none; }}")
+            for btn in self._toolbar2.findChildren(QPushButton):
+                btn.setStyleSheet(btn_style)
         if hasattr(self, "_status_bar"):
             self._status_bar.setStyleSheet(
                 f"background-color: {th.panel_bg}; border-top: 1px solid {th.border_default};"

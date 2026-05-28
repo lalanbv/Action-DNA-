@@ -9,12 +9,11 @@ import copy
 import logging
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QHeaderView,
     QLabel, QPlainTextEdit, QPushButton,
     QSizePolicy,
-    QSpinBox, QSplitter, QToolBar, QTreeWidget, QTreeWidgetItem,
+    QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -81,22 +80,43 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         th = current_theme()
         sm = qt_scale_manager()
 
-        toolbar = QToolBar()
-        toolbar.setMovable(False)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        toolbar.setStyleSheet(f"background-color: {th.panel_bg}; border: none;")
+        toolbar = QWidget()
+        toolbar.setObjectName("actionChainToolbar")
+        toolbar.setStyleSheet(
+            f"QWidget#actionChainToolbar {{ background-color: {th.panel_bg}; border: none; }}"
+        )
+        layout = QHBoxLayout(toolbar)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(2)
 
-        back_action = QAction(t("common.back"), self)
-        back_action.triggered.connect(self._go_home)
-        toolbar.addAction(back_action)
-        toolbar.addWidget(self._make_label(t("chain.title"), bold=True))
+        btn_style = (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"padding: 4px 8px; color: {th.text_primary}; }}"
+            f"QPushButton:hover {{ background: {th.bg_surface_hover}; "
+            f"border-radius: 3px; }}"
+        )
 
-        toolbar.addSeparator()
+        def _tb(text: str, handler) -> QPushButton:
+            b = QPushButton(text)
+            b.setStyleSheet(btn_style)
+            b.clicked.connect(handler)
+            return b
+
+        layout.addWidget(_tb(t("common.back"), self._go_home))
+        layout.addWidget(self._make_label(t("chain.title"), bold=True))
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet(f"color: {th.border_default};")
+        layout.addWidget(sep)
 
         # 配置文件
         self._profile_combo = QComboBox()
         self._profile_combo.setMinimumWidth(sm.s(120))
-        toolbar.addWidget(self._profile_combo)
+        self._profile_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon,
+        )
+        layout.addWidget(self._profile_combo)
 
         for label, handler in [
             (t("common.load"), self._on_load_profile),
@@ -106,38 +126,38 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
             (t("chain.export"), self._on_export_profile),
             (t("chain.import"), self._on_import_profile),
         ]:
-            act = QAction(label, self)
-            act.triggered.connect(handler)
-            toolbar.addAction(act)
+            layout.addWidget(_tb(label, handler))
 
-        toolbar.addSeparator()
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.VLine)
+        sep2.setStyleSheet(f"color: {th.border_default};")
+        layout.addWidget(sep2)
 
         # 区域
-        fullscreen_action = QAction(t("chain.region.fullscreen"), self)
-        fullscreen_action.triggered.connect(self._on_fullscreen)
-        toolbar.addAction(fullscreen_action)
-        pick_action = QAction(t("chain.region.pick"), self)
-        pick_action.triggered.connect(self._on_pick_region)
-        toolbar.addAction(pick_action)
+        layout.addWidget(_tb(t("chain.region.fullscreen"), self._on_fullscreen))
+        layout.addWidget(_tb(t("chain.region.pick"), self._on_pick_region))
 
-        toolbar.addSeparator()
+        sep3 = QFrame()
+        sep3.setFrameShape(QFrame.Shape.VLine)
+        sep3.setStyleSheet(f"color: {th.border_default};")
+        layout.addWidget(sep3)
 
         # 循环
         self._loop_cb = QCheckBox(t("common.infinite_loop"))
         self._loop_cb.setChecked(True)
-        toolbar.addWidget(self._loop_cb)
+        layout.addWidget(self._loop_cb)
         self._loop_count_spin = QSpinBox()
         self._loop_count_spin.setRange(0, 9999)
         self._loop_count_spin.setValue(0)
         self._loop_count_spin.setVisible(not self._loop_cb.isChecked())
-        toolbar.addWidget(self._loop_count_spin)
+        layout.addWidget(self._loop_count_spin)
         self._loop_cb.stateChanged.connect(
             lambda: self._loop_count_spin.setVisible(not self._loop_cb.isChecked()),
         )
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        toolbar.addWidget(spacer)
+        layout.addWidget(spacer)
 
         # 运行控制
         for label, handler in [
@@ -146,19 +166,18 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
             (t("common.resume"), self._on_resume),
             (t("common.stop"), self._on_stop),
         ]:
-            act = QAction(label, self)
-            act.triggered.connect(handler)
-            toolbar.addAction(act)
+            layout.addWidget(_tb(label, handler))
 
-        toolbar.addSeparator()
+        sep4 = QFrame()
+        sep4.setFrameShape(QFrame.Shape.VLine)
+        sep4.setStyleSheet(f"color: {th.border_default};")
+        layout.addWidget(sep4)
 
-        clear_action = QAction(t("chain.clear"), self)
-        clear_action.triggered.connect(self._on_clear_steps)
-        toolbar.addAction(clear_action)
+        layout.addWidget(_tb(t("chain.clear"), self._on_clear_steps))
 
         self._status_label = QLabel(t("chain.status.ready"))
         self._status_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
-        toolbar.addWidget(self._status_label)
+        layout.addWidget(self._status_label)
 
         self._toolbar = toolbar
         self.layout().addWidget(toolbar)
@@ -317,6 +336,9 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         frame_layout.addWidget(self._mon_tree)
 
         btn_row = QHBoxLayout()
+        self._mon_edit_btn: QPushButton | None = None
+        self._mon_toggle_btn: QPushButton | None = None
+        self._mon_delete_btn: QPushButton | None = None
         for icon, handler in [
             (t("chain.mon.add"), self._on_add_monitor),
             (t("common.edit"), self._on_edit_monitor),
@@ -341,6 +363,17 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
             """)
             btn.clicked.connect(lambda _checked, h=handler: h())
             btn_row.addWidget(btn)
+            # 保存编辑/切换/删除按钮引用，用于根据选择状态启用/禁用
+            if icon == t("common.edit"):
+                self._mon_edit_btn = btn
+            elif icon == t("chain.mon.toggle"):
+                self._mon_toggle_btn = btn
+            elif icon == t("common.delete"):
+                self._mon_delete_btn = btn
+
+        # 初始状态：无选中时禁用编辑/切换/删除
+        self._set_mon_buttons_enabled(False)
+        self._mon_tree.currentItemChanged.connect(lambda *_: self._on_monitor_select())
 
         self._mon_count_label = QLabel("")
         self._mon_count_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
@@ -552,6 +585,15 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         mon.enabled = not mon.enabled
         self._controller.update_monitor(idx, mon)
 
+    def _set_mon_buttons_enabled(self, enabled: bool) -> None:
+        for btn in (self._mon_edit_btn, self._mon_toggle_btn, self._mon_delete_btn):
+            if btn is not None:
+                btn.setEnabled(enabled)
+
+    def _on_monitor_select(self) -> None:
+        has_selection = self._get_selected_monitor() is not None
+        self._set_mon_buttons_enabled(has_selection)
+
     def _refresh_monitor_list(self):
         if not hasattr(self, "_mon_tree") or self._mon_tree is None:
             return
@@ -621,8 +663,19 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
     def apply_theme(self) -> None:
         super().apply_theme()
         th = current_theme()
+        sm = qt_scale_manager()
         if hasattr(self, "_toolbar"):
-            self._toolbar.setStyleSheet(f"background-color: {th.panel_bg}; border: none;")
+            btn_style = (
+                f"QPushButton {{ background: transparent; border: none; "
+                f"padding: 4px 8px; color: {th.text_primary}; }}"
+                f"QPushButton:hover {{ background: {th.bg_surface_hover}; "
+                f"border-radius: 3px; }}"
+            )
+            self._toolbar.setStyleSheet(
+                f"QWidget#actionChainToolbar {{ background-color: {th.panel_bg}; border: none; }}"
+            )
+            for btn in self._toolbar.findChildren(QPushButton):
+                btn.setStyleSheet(btn_style)
         if hasattr(self, "_status_bar"):
             self._status_bar.setStyleSheet(
                 f"background-color: {th.panel_bg}; border-top: 1px solid {th.border_default};"

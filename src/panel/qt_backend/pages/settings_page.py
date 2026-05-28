@@ -62,6 +62,7 @@ class QtSettingsPage(QtBasePage):
         scroll_layout.setSpacing(sm.s(8))
 
         self._build_appearance_section(scroll_layout, th, sm)
+        self._build_backend_section(scroll_layout, th, sm)
         self._build_status_section(scroll_layout, th, sm)
         self._build_hotkey_section(scroll_layout, th, sm)
         scroll_layout.addStretch()
@@ -100,6 +101,41 @@ class QtSettingsPage(QtBasePage):
         section_layout.addWidget(self._theme_hint_label)
 
         layout.addWidget(section)
+
+    def _build_backend_section(self, layout: QVBoxLayout, th, sm) -> None:
+        section = themed_frame(self)
+        section_layout = QVBoxLayout(section)
+        section_layout.setContentsMargins(sm.s(th.pad_md), sm.s(th.pad_sm), sm.s(th.pad_md), sm.s(th.pad_sm))
+
+        section_lbl = themed_label(self, text=t("settings.gui_backend"), style="subtitle")
+        section_layout.addWidget(section_lbl)
+
+        radio_row = QHBoxLayout()
+        self._backend_radios: dict[str, QRadioButton] = {}
+        from src.core.config import load_config
+        current_backend = load_config().editor.gui_backend
+        for mode, label_key in [("qt", "settings.gui_backend_qt"), ("tk", "settings.gui_backend_tk")]:
+            rb = QRadioButton(t(label_key))
+            rb.setStyleSheet(f"color: {th.text_primary};")
+            if mode == current_backend:
+                rb.setChecked(True)
+            rb.toggled.connect(lambda checked, m=mode: self._on_backend_radio(m) if checked else None)
+            self._backend_radios[mode] = rb
+            radio_row.addWidget(rb)
+        radio_row.addStretch()
+        section_layout.addLayout(radio_row)
+
+        self._backend_hint_label = QLabel(t("settings.gui_backend_hint"))
+        self._backend_hint_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(11)}px;")
+        section_layout.addWidget(self._backend_hint_label)
+
+        layout.addWidget(section)
+
+    def _on_backend_radio(self, mode: str) -> None:
+        cfg = load_config()
+        cfg.editor.gui_backend = mode
+        save_config(cfg)
+        self._backend_hint_label.setText(t("settings.gui_backend_hint"))
 
     def _build_status_section(self, layout: QVBoxLayout, th, sm) -> None:
         hm = self.app.hotkey_manager
@@ -204,6 +240,7 @@ class QtSettingsPage(QtBasePage):
         save_config(cfg)
         set_theme_mode(mode)
         self._update_theme_hint()
+        self.apply_theme()
 
     def _update_theme_hint(self) -> None:
         mode = current_theme_mode()
@@ -378,6 +415,60 @@ class QtSettingsPage(QtBasePage):
                 HotkeyBindingConfig(key_combination=combo, use_global=use_global),
             )
         save_config(cfg)
+
+    # ── 主题 ──────────────────────────────────────────────
+
+    def apply_theme(self) -> None:
+        super().apply_theme()
+        th = current_theme()
+        sm = qt_scale_manager()
+
+        # 更新主题单选按钮样式
+        for rb in self._theme_radios.values():
+            rb.setStyleSheet(f"color: {th.text_primary};")
+
+        # 更新后端单选按钮样式
+        for rb in self._backend_radios.values():
+            rb.setStyleSheet(f"color: {th.text_primary};")
+
+        # 更新提示标签
+        if hasattr(self, "_theme_hint_label"):
+            self._theme_hint_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(11)}px;")
+        if hasattr(self, "_backend_hint_label"):
+            self._backend_hint_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(11)}px;")
+
+        # 更新热键树样式
+        if hasattr(self, "_tree"):
+            self._tree.setStyleSheet(f"""
+                QTreeWidget {{
+                    background-color: {th.bg_surface};
+                    color: {th.text_primary};
+                    border: 1px solid {th.border_default};
+                    border-radius: {sm.s(4)}px;
+                    font-size: {sm.s(13)}px;
+                    alternate-background-color: {th.input_bg};
+                }}
+                QTreeWidget::item {{
+                    padding: {sm.s(4)}px;
+                    border-bottom: 1px solid {th.border_default};
+                }}
+                QTreeWidget::item:selected {{
+                    background-color: {th.accent_blue};
+                    color: {th.text_on_accent};
+                }}
+                QHeaderView::section {{
+                    background-color: {th.bg_surface};
+                    color: {th.text_muted};
+                    border: none;
+                    border-bottom: 1px solid {th.border_default};
+                    padding: {sm.s(4)}px {sm.s(8)}px;
+                    font-weight: bold;
+                }}
+            """)
+
+        # 更新状态标签
+        if hasattr(self, "_status_label"):
+            self._status_label.setStyleSheet(f"color: {th.text_muted};")
 
     def destroy_page(self) -> None:
         if hasattr(self, "_capture_action"):

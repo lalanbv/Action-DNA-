@@ -119,6 +119,13 @@ class QtWorkflowActionsMixin:
                 self._close_search()
             case "toggle_minimap":
                 pass
+            case "auto_insert":
+                self._on_auto_insert(
+                    kwargs.get("edge_id", ""),
+                    kwargs.get("node_id", ""),
+                    kwargs.get("x", 0),
+                    kwargs.get("y", 0),
+                )
 
     # ── Node operations ────────────────────────────────────
 
@@ -361,6 +368,23 @@ class QtWorkflowActionsMixin:
         self._canvas.render_graph(self._model.graph)
         self._append_log(f"- edge:{edge_id}")
         self._clear_props()
+        self._update_status_bar()
+
+    def _on_auto_insert(self, edge_id: str, node_id: str, x: int, y: int):
+        if self._controller.is_executor_running:
+            return
+        graph = self._model.graph
+        edge = graph.get_edge(edge_id)
+        if not edge or not node_id:
+            return
+        from_node_id = edge.from_node
+        to_node_id = edge.to_node
+        label = edge.label
+        self._controller.remove_edge(edge_id)
+        self._controller.update_node_position(node_id, x, y)
+        self._controller.add_edge(from_node_id, node_id, label)
+        self._controller.add_edge(node_id, to_node_id, EdgeLabel.DEFAULT)
+        self._canvas.render_graph(self._model.graph)
         self._update_status_bar()
 
     def _on_duplicate_node(self, node_id: str):

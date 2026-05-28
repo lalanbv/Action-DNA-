@@ -23,10 +23,23 @@ if TYPE_CHECKING:
     from src.panel.qt_backend.canvas.graph_canvas import QtGraphCanvas
 
 _SNAP_GRID = 10
+_AUTO_INSERT_DIST = 40
 
 
 def _snap(x: float, grid: int = _SNAP_GRID) -> float:
     return round(x / grid) * grid
+
+
+def _point_to_segment_dist(
+    px: float, py: float, x1: float, y1: float, x2: float, y2: float,
+) -> float:
+    dx, dy = x2 - x1, y2 - y1
+    len_sq = dx * dx + dy * dy
+    if len_sq < 0.001:
+        return ((px - x1) ** 2 + (py - y1) ** 2) ** 0.5
+    t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / len_sq))
+    proj_x, proj_y = x1 + t * dx, y1 + t * dy
+    return ((px - proj_x) ** 2 + (py - proj_y) ** 2) ** 0.5
 
 
 class _Mode(Enum):
@@ -69,8 +82,12 @@ class QtInteractionHandler:
 
         self._connect_from_node: str | None = None
         self._connect_from_port: str | None = None
+        self._connect_from_pos: tuple[float, float] = (0, 0)
 
         self._snap_to_grid: bool = True
+
+        self._can_auto_insert: bool = False
+        self._auto_insert_candidate: str | None = None
 
     def install(self) -> None:
         self._canvas.setMouseTracking(True)
@@ -116,6 +133,7 @@ class QtInteractionHandler:
                 case _Mode.DRAGGING:
                     self._end_drag(scene_pos)
                 case _Mode.CONNECTING:
+                    self._callback("temp_edge_clear")
                     self._end_connect(scene_pos)
                 case _Mode.SELECTING:
                     self._end_select()
@@ -251,6 +269,12 @@ class QtInteractionHandler:
             node = graph.get_node(node_id)
             if node:
                 self._drag_node_start_pos = (node.pos_x, node.pos_y)
+        self._can_auto_insert = False
+        self._auto_insert_candidate = None
+        if graph and node_id:
+            edges = graph.get_edges_for_node(node_id)
+            if not edges:
+                self._can_auto_insert = True
 
     def _start_multi_drag(self, scene_pos: QPointF) -> None:
         self._mode = _Mode.DRAGGING
@@ -293,12 +317,47 @@ class QtInteractionHandler:
         for nid, new_x, new_y in self._compute_drag_positions(scene_pos):
             self._callback("node_dragging", node_id=nid, world_x=new_x, world_y=new_y)
 
+        if self._can_auto_insert and self._drag_node_id:
+            result = self._nearest_edge_to_point(scene_pos.x(), scene_pos.y())
+            if result:
+                new_candidate = result
+                if new_candidate != self._auto_insert_candidate:
+                    if self._auto_insert_candidate:
+                        self._callback("auto_insert_clear")
+                    self._auto_insert_candidate = new_candidate
+                    self._callback("auto_insert_preview", edge_id=new_candidate)
+            else:
+                if self._auto_insert_candidate:
+                    self._callback("auto_insert_clear")
+                self._auto_insert_candidate = None
+
     def _end_drag(self, scene_pos: QPointF) -> None:
         self._mode = _Mode.IDLE
+        if self._can_auto_insert and self._auto_insert_candidate and self._drag_node_id:
+            positions = self._compute_drag_positions(scene_pos)
+            _, snap_x, snap_y = positions[0] if positions else (self._drag_node_id, 0, 0)
+            self._callback("auto_insert_clear")
+            self._callback(
+                "auto_insert",
+                edge_id=self._auto_insert_candidate,
+                node_id=self._drag_node_id,
+                x=int(snap_x),
+                y=int(snap_y),
+            )
+            self._auto_insert_candidate = None
+            self._can_auto_insert = False
+            self._drag_node_id = None
+            self._multi_drag_offsets.clear()
+            return
+
         for nid, new_x, new_y in self._compute_drag_positions(scene_pos):
             self._callback("node_moved", node_id=nid, world_x=new_x, world_y=new_y)
         self._drag_node_id = None
         self._multi_drag_offsets.clear()
+        if self._auto_insert_candidate:
+            self._callback("auto_insert_clear")
+        self._auto_insert_candidate = None
+        self._can_auto_insert = False
 
     # ── Connecting ─────────────────────────────────────────
 
@@ -306,9 +365,19 @@ class QtInteractionHandler:
         self._mode = _Mode.CONNECTING
         self._connect_from_node = node_id
         self._connect_from_port = port_name
+        graph = self._get_graph()
+        if graph:
+            node = graph.get_node(node_id)
+            if node:
+                positions = port_positions(node)
+                if port_name in positions:
+                    self._connect_from_pos = positions[port_name]
 
     def _do_connect_move(self, scene_pos: QPointF) -> None:
-        pass
+        if not self._connect_from_node:
+            return
+        fx, fy = self._connect_from_pos
+        self._callback("temp_edge", from_x=fx, from_y=fy, to_x=scene_pos.x(), to_y=scene_pos.y())
 
     def _end_connect(self, scene_pos: QPointF) -> None:
         self._mode = _Mode.IDLE
@@ -471,3 +540,34 @@ class QtInteractionHandler:
             screen_x=screen_pos.x(),
             screen_y=screen_pos.y(),
         )
+
+    # ── Auto-insert helpers ─────────────────────────────────
+
+    def _nearest_edge_to_point(self, wx: float, wy: float) -> str | None:
+        graph = self._get_graph()
+        if not graph:
+            return None
+        best_id: str | None = None
+        best_dist = _AUTO_INSERT_DIST
+        drag_id = self._drag_node_id
+        for edge in graph.edges:
+            if drag_id and (edge.from_node == drag_id or edge.to_node == drag_id):
+                continue
+            from_node = graph.get_node(edge.from_node)
+            to_node = graph.get_node(edge.to_node)
+            if not from_node or not to_node:
+                continue
+            from_ports = port_positions(from_node)
+            to_ports = port_positions(to_node)
+            from_key = f"out_{edge.label}"
+            if from_key not in from_ports:
+                from_key = "out_default"
+            if from_key not in from_ports or "in" not in to_ports:
+                continue
+            fx, fy = from_ports[from_key]
+            tx, ty = to_ports["in"]
+            dist = _point_to_segment_dist(wx, wy, fx, fy, tx, ty)
+            if dist < best_dist:
+                best_dist = dist
+                best_id = edge.edge_id
+        return best_id

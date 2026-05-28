@@ -1,8 +1,6 @@
-"""字体检测 — 跨平台最佳字体发现"""
+"""字体检测 — 跨平台最佳字体发现（支持 tkinter 和 Qt 后端）"""
 
-import tkinter as tk
-import tkinter.font as tkFont
-
+from src.panel.backend_selector import use_qt_backend
 from src.utils.platform import IS_MACOS, IS_WINDOWS
 
 _detected_family: str | None = None
@@ -15,6 +13,24 @@ def _get_available_families() -> set[str]:
     global _available_families
     if _available_families is not None:
         return _available_families
+
+    if use_qt_backend():
+        try:
+            from PySide6.QtGui import QFontDatabase
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is not None:
+                db = QFontDatabase()
+                _available_families = set(db.families())
+                return _available_families
+        except ImportError:
+            pass
+        _available_families = set()
+        return _available_families
+
+    import tkinter as tk
+    import tkinter.font as tkFont
+
     root = tk._default_root
     if root is None:
         return set()

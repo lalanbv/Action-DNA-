@@ -191,6 +191,7 @@ class RuntimeConfig:
 class EditorConfig:
     """编辑器 UI 偏好"""
     theme_mode: str = "system"  # "dark" | "light" | "system"
+    gui_backend: str = "qt"  # "qt" | "tk"
 
 
 @dataclass

@@ -34,11 +34,14 @@ class ThemeRegistry:
         """注册可主题化控件，返回回调 ID（与 on_theme_change 共享 ID 空间）。"""
         def _notify() -> None:
             try:
+                # 检查 widget 是否仍然存活（tkinter 用 winfo_exists，Qt 用 isVisible）
                 if hasattr(widget, 'winfo_exists') and not widget.winfo_exists():
+                    return
+                if hasattr(widget, 'isVisible') and not widget.isVisible():
                     return
                 widget.apply_theme(current_theme())
             except Exception:
-                pass  # Widget is dead, callback may self-clean on next set_theme_mode
+                pass
 
         return on_theme_change(_notify)
 

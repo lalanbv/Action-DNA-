@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QSize
 
-from src.panel.canvas.scale import Breakpoint, _BASE_DPI, _COMPACT_THRESHOLD, _WIDE_THRESHOLD
+from src.panel.canvas.scale_constants import BASE_DPI, COMPACT_THRESHOLD, WIDE_THRESHOLD, Breakpoint
 
 
 class QtScaleManager:
@@ -27,7 +27,7 @@ class QtScaleManager:
         if screen is None:
             return
         dpi = screen.logicalDotsPerInch()
-        self._scale_factor = dpi / _BASE_DPI
+        self._scale_factor = dpi / BASE_DPI
         if self._scale_factor < 1.0:
             self._scale_factor = 1.0
 
@@ -48,9 +48,9 @@ class QtScaleManager:
 
     def update_breakpoint(self, width: int) -> None:
         """根据窗口宽度更新断点。"""
-        if width < _COMPACT_THRESHOLD:
+        if width < COMPACT_THRESHOLD:
             self._breakpoint = Breakpoint.COMPACT
-        elif width > _WIDE_THRESHOLD:
+        elif width > WIDE_THRESHOLD:
             self._breakpoint = Breakpoint.WIDE
         else:
             self._breakpoint = Breakpoint.NORMAL

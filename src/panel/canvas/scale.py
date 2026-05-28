@@ -7,24 +7,20 @@
 """
 
 import tkinter as tk
-from enum import Enum
 from tkinter import ttk
 
+from src.panel.canvas.scale_constants import (
+    BASE_DPI,
+    COMPACT_THRESHOLD,
+    WIDE_THRESHOLD,
+    Breakpoint,
+)
 from src.utils.platform import IS_MACOS, IS_LINUX
 
-
-class Breakpoint(Enum):
-    COMPACT = "compact"  # 窗口宽度 < 900px
-    NORMAL = "normal"  # 900-1200px
-    WIDE = "wide"  # > 1200px
-
-
-# 断点阈值
-_COMPACT_THRESHOLD = 900
-_WIDE_THRESHOLD = 1200
-
-# 参考 DPI
-_BASE_DPI = 96.0
+# 保持向后兼容的模块级别名
+_BASE_DPI = BASE_DPI
+_COMPACT_THRESHOLD = COMPACT_THRESHOLD
+_WIDE_THRESHOLD = WIDE_THRESHOLD
 
 
 class ScaleManager:

@@ -10,14 +10,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.panel.profile_manager import ProfileManager
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QPushButton, QRadioButton, QScrollArea,
     QVBoxLayout, QWidget,
 )
 
-from src.panel.canvas.scale import Breakpoint, scale_manager
+from src.panel.canvas.scale_constants import Breakpoint
 from src.panel.canvas.theme import current_theme, current_theme_mode, set_theme_mode
 from src.panel.home_shared import (
     CHECK_EXECUTOR_MS,
@@ -75,6 +75,7 @@ class QtHomePage(HomeStateMixin, QtBasePage):
 
         self._section_widgets: dict[PageType, QWidget | None] = {}
         self._section_combos: dict[PageType, QComboBox] = {}
+        self._section_combo_handlers: dict[PageType, object] = {}
         self._last_states: dict[PageType, SectionState | None] = {}
         self._dot_labels: dict[PageType, QLabel] = {}
         self._section_refs: dict[PageType, dict] = {}
@@ -93,17 +94,20 @@ class QtHomePage(HomeStateMixin, QtBasePage):
             self._section_combos[pt] = QComboBox()
             self._dot_labels[pt] = QLabel()
 
-        self._rescan_launchable_profiles()
-        self._rebuild_all_sections()
-        self.schedule(CHECK_EXECUTOR_MS, self._check_executor_state)
-
         self._cards_frame = QWidget()
         self._cards_layout = QGridLayout(self._cards_frame)
         self._cards_layout.setSpacing(sm.s(8))
         self._content_layout.addWidget(self._cards_frame, 1)
-        self._rebuild_cards(self._breakpoint_cols())
 
         self._content_layout.addStretch()
+
+        QTimer.singleShot(0, self._deferred_build)
+
+    def _deferred_build(self) -> None:
+        self._rescan_launchable_profiles()
+        self._rebuild_all_sections()
+        self._rebuild_cards(self._breakpoint_cols())
+        self.schedule(CHECK_EXECUTOR_MS, self._check_executor_state)
 
     def _build_toolbar(self, layout: QVBoxLayout, th, sm) -> None:
         toolbar = self._build_toolbar_base(layout, "app.title", show_back=False)
@@ -409,10 +413,12 @@ class QtHomePage(HomeStateMixin, QtBasePage):
                 combo.setCurrentText(state.profile_name)
             else:
                 combo.setCurrentIndex(0)
-            combo.currentTextChanged.disconnect()
-            combo.currentTextChanged.connect(
-                lambda _text, pt=page_type: self._on_section_profile_selected(pt),
-            )
+            old_handler = self._section_combo_handlers.get(page_type)
+            if old_handler is not None:
+                combo.currentTextChanged.disconnect(old_handler)
+            handler = lambda _text, pt=page_type: self._on_section_profile_selected(pt)
+            self._section_combo_handlers[page_type] = handler
+            combo.currentTextChanged.connect(handler)
             row.addWidget(combo)
         else:
             no_profile_lbl = QLabel(t("home.banner.no_profile"))

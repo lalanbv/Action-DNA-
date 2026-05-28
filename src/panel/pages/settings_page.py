@@ -40,6 +40,9 @@ class SettingsPage(BasePage):
         # 外观设置区域
         self._build_appearance_section(th)
 
+        # 界面样式选择区域
+        self._build_backend_section(th)
+
         # 全局热键状态提示区
         self._build_status_section(th)
 
@@ -160,6 +163,38 @@ class SettingsPage(BasePage):
             )
         else:
             self._theme_hint_var.set("")
+
+    def _build_backend_section(self, th):
+        """构建界面样式选择区域。"""
+        from src.core.config import load_config
+
+        section = themed_labelframe(self.frame, text=t("settings.gui_backend"))
+        section.pack(fill=tk.X, padx=th.pad_xl, pady=(th.pad_md, 0))
+
+        radio_frame = themed_frame(section)
+        radio_frame.pack(fill=tk.X, padx=th.pad_md, pady=th.pad_sm)
+
+        cfg = load_config()
+        self._backend_var = tk.StringVar(value=cfg.editor.gui_backend)
+        for mode, label_key in [
+            ("qt", "settings.gui_backend_qt"),
+            ("tk", "settings.gui_backend_tk"),
+        ]:
+            themed_radiobutton(
+                radio_frame, text=t(label_key), value=mode,
+                variable=self._backend_var,
+                command=lambda m=mode: self._on_backend_radio(m),
+            ).pack(side=tk.LEFT, padx=(0, th.pad_lg))
+
+        themed_label(
+            section, text=t("settings.gui_backend_hint"), style="small",
+        ).pack(padx=th.pad_md, pady=(0, th.pad_sm), anchor=tk.W)
+
+    def _on_backend_radio(self, mode: str) -> None:
+        from src.core.config import load_config, save_config
+        cfg = load_config()
+        cfg.editor.gui_backend = mode
+        save_config(cfg)
 
     def _populate_tree(self):
         for item in self._tree.get_children():

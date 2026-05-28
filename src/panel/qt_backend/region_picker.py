@@ -7,13 +7,15 @@
 - 多显示器支持：遍历所有屏幕，计算虚拟桌面完整几何
 - 混合 DPI 支持：使用实际截图尺寸与显示尺寸的比例计算缩放
 - 坐标转换：画布坐标 → mss 坐标 → 逻辑坐标（pyautogui）
+- macOS 可见性：窗口标志直接在构造函数中传入，避免 setWindowFlags() 隐藏问题
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
-from PySide6.QtCore import Qt, QPoint, QRect
+from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPen, QColor, QPixmap, QImage
 from PySide6.QtWidgets import QWidget, QApplication
 
@@ -22,24 +24,39 @@ from src.panel.canvas.theme import current_theme
 from src.panel.region_coords import RegionCoordConverter
 from src.utils.i18n import t
 
+logger = logging.getLogger(__name__)
+
 
 class QtRegionPicker(QWidget):
     """全屏覆盖层区域框选器。
 
     Args:
+        parent: 父窗口（主窗口），确保 macOS 正确管理窗口层级
         capture: ScreenCapture 实例
         callback: 选择完成回调 callback(left, top, width, height)，逻辑像素
         on_cancel: 取消回调（可选）
+        pre_captured_bgr: 预截取的 BGR 截图（可选）
     """
 
     def __init__(
         self,
+        parent: QWidget | None,
         capture,
         callback: Callable[[int, int, int, int], None],
         *,
         on_cancel: Callable[[], None] | None = None,
+        pre_captured_bgr=None,
     ) -> None:
-        super().__init__(None, Qt.WindowType.Window)
+        # 关键修复：直接在构造函数中传入窗口标志 + 父窗口。
+        # 旧代码先 super().__init__(None, Window) 再调用 setWindowFlags()，
+        # 但 setWindowFlags() 内部调用 setParent() 会隐藏 widget。
+        # macOS/PySide6 上，隐藏后的 widget 即使调用 show() 也可能无法正确恢复。
+        super().__init__(
+            parent,
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
         self._callback = callback
         self._on_cancel = on_cancel
         self._closed = False
@@ -47,21 +64,18 @@ class QtRegionPicker(QWidget):
         self._start_pos: QPoint | None = None
         self._selection: QRect | None = None
 
-        # 截图
-        screen_bgr = capture.grab()
+        # 截图：优先使用预截图（主窗口已恢复时使用）
+        if pre_captured_bgr is not None:
+            screen_bgr = pre_captured_bgr
+        else:
+            screen_bgr = capture.grab()
         require_cv2("region picker")
         screen_rgb = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2RGB)
         # 保持引用防止 GC 回收（QImage 引用此数组的数据）
         self._screen_rgb = screen_rgb
         shot_h, shot_w = screen_rgb.shape[:2]
 
-        # 窗口配置
         self.setWindowTitle(t("region.title"))
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
         self.setCursor(Qt.CursorShape.CrossCursor)
 
         # 计算显示区域 — 遍历所有屏幕取并集
@@ -78,11 +92,20 @@ class QtRegionPicker(QWidget):
         h, w, ch = screen_rgb.shape
         bytes_per_line = ch * w
         qimg = QImage(screen_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        if qimg.isNull():
+            logger.error("QImage is null (shape=%s, bpl=%d)", screen_rgb.shape, bytes_per_line)
+            self._close()
+            return
+
         self._pixmap = QPixmap.fromImage(qimg).scaled(
             display_w, display_h,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        if self._pixmap.isNull():
+            logger.error("QPixmap is null after fromImage+scaled (display=%dx%d)", display_w, display_h)
+            self._close()
+            return
 
         self.setFixedSize(display_w, display_h)
         pos_x = virtual_geo.x() + (virtual_geo.width() - display_w) // 2
@@ -91,9 +114,17 @@ class QtRegionPicker(QWidget):
 
         self._accent_color = QColor(current_theme().accent_red)
 
+        logger.debug(
+            "QtRegionPicker: pos=(%d,%d) size=%dx%d shot=%dx%d scale=%.3f",
+            pos_x, pos_y, display_w, display_h, shot_w, shot_h, display_scale,
+        )
+
         self.show()
-        self.activateWindow()
         self.raise_()
+        self.activateWindow()
+        # macOS 可能在构造函数返回后重新激活主窗口，延迟确保置顶
+        QTimer.singleShot(50, self.raise_)
+        QTimer.singleShot(150, self.raise_)
 
     @staticmethod
     def _virtual_desktop_geometry() -> QRect:
@@ -196,26 +227,53 @@ def show_region_picker(
     *,
     on_cancel: Callable[[], None] | None = None,
 ) -> None:
-    """最小化窗口后延迟截图并弹出区域选择器。
+    """截图后隐藏主窗口，弹出全屏区域框选器。
 
-    流程：最小化主窗口 → 延迟 300ms（让桌面可见） → 截图 → 显示选择器。
+    流程：
+    1. 立即截图（包含当前屏幕所有内容）
+    2. 隐藏主窗口
+    3. 创建全屏覆盖层，显示截图让用户框选区域
+    4. 框选完成后恢复主窗口
+
+    不再使用透明度技巧（setWindowOpacity(0)），因为：
+    - 200ms 延迟在慢系统上不够，截图仍包含窗口
+    - 透明度恢复后窗口可能抢夺焦点，导致框选器无法操作
+    - macOS 上透明窗口行为不可预测
     """
-    app.showMinimized()
+    try:
+        screen_bgr = capture.grab()
+    except Exception:
+        logger.exception("Screen capture failed in region picker")
+        return
+
+    app.hide()
     QApplication.processEvents()
 
-    def _do_pick() -> None:
-        def _on_done(left: int, top: int, w: int, h: int) -> None:
-            app.showNormal()
-            app.activateWindow()
-            callback(left, top, w, h)
+    def _on_picker_done(*_args) -> None:
+        app.show()
+        app.raise_()
+        app.activateWindow()
 
-        def _on_cancelled() -> None:
-            if on_cancel:
-                on_cancel()
-            app.showNormal()
-            app.activateWindow()
+    def _on_picker_cancel() -> None:
+        app.show()
+        app.raise_()
+        app.activateWindow()
+        if on_cancel:
+            on_cancel()
 
-        QtRegionPicker(capture, _on_done, on_cancel=_on_cancelled)
+    original_callback = callback
 
-    from PySide6.QtCore import QTimer
-    QTimer.singleShot(300, _do_pick)
+    def _wrapped_callback(lx: int, ly: int, w: int, h: int) -> None:
+        _on_picker_done()
+        original_callback(lx, ly, w, h)
+
+    try:
+        QtRegionPicker(
+            app, capture, _wrapped_callback, on_cancel=_on_picker_cancel,
+            pre_captured_bgr=screen_bgr,
+        )
+    except Exception:
+        logger.exception("Failed to create QtRegionPicker")
+        app.show()
+        app.raise_()
+        app.activateWindow()

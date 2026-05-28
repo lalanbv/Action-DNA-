@@ -69,9 +69,9 @@ def apply_bfs_positions(
     graph: FlowGraph,
     *,
     spacing_x: float = 250,
-    spacing_y: float = 150,
-    origin_x: float = 100,
-    origin_y: float = 300,
+    spacing_y: float = 120,
+    origin_x: float = 50,
+    origin_y: float = 50,
 ) -> None:
     """BFS 自动布局，直接设置 node.pos_x / pos_y。"""
     if not graph.nodes:
@@ -94,5 +94,5 @@ def apply_bfs_positions(
     for depth, layer_list in layer_nodes.items():
         count = len(layer_list)
         for i, node in enumerate(layer_list):
-            node.pos_x = depth * spacing_x + origin_x
-            node.pos_y = i * spacing_y - (count - 1) * spacing_y / 2 + origin_y
+            node.pos_x = int(depth * spacing_x + origin_x)
+            node.pos_y = int(i * spacing_y - (count - 1) * spacing_y / 2 + origin_y)
