@@ -59,14 +59,15 @@ def themed_button(
     **kw: Any,
 ) -> QPushButton:
     th = current_theme()
-    btn_cfg = _BUTTON_STYLES[style]
-    bg = getattr(th, btn_cfg["bg_prop"])
-    fg = getattr(th, btn_cfg["fg_prop"])
-
     btn = QPushButton(text, parent)
     btn.setFont(_qt_font(th.font_body))
 
-    btn.setStyleSheet(_build_button_qss(bg, fg))
+    if style != "secondary":
+        btn.setProperty("dnaBtnStyle", style)
+        btn_cfg = _BUTTON_STYLES[style]
+        bg = getattr(th, btn_cfg["bg_prop"])
+        fg = getattr(th, btn_cfg["fg_prop"])
+        btn.setStyleSheet(_build_button_qss(bg, fg))
 
     if command:
         btn.clicked.connect(lambda _checked: command())
@@ -79,27 +80,8 @@ def themed_button(
 
 def themed_entry(parent: QWidget, **kw: Any) -> QLineEdit:
     th = current_theme()
-    sm = qt_scale_manager()
     entry = QLineEdit(parent)
     entry.setFont(_qt_font(th.font_body))
-    entry.setStyleSheet(f"""
-        QLineEdit {{
-            background-color: {th.input_bg};
-            color: {th.text_primary};
-            border: 1px solid {th.border_default};
-            border-radius: 4px;
-            padding: {sm.s(th.pad_xs)}px {sm.s(th.pad_sm)}px;
-            selection-background-color: {th.accent_blue};
-            selection-color: {th.text_on_accent};
-        }}
-        QLineEdit:focus {{
-            border-color: {th.accent_blue};
-        }}
-        QLineEdit:disabled {{
-            background-color: {th.btn_disabled_bg};
-            color: {th.btn_disabled_fg};
-        }}
-    """)
     if "placeholder" in kw:
         entry.setPlaceholderText(kw.pop("placeholder"))
     if "text" in kw:
@@ -114,24 +96,8 @@ def themed_entry(parent: QWidget, **kw: Any) -> QLineEdit:
 
 def themed_spinbox(parent: QWidget, **kw: Any) -> QSpinBox:
     th = current_theme()
-    sm = qt_scale_manager()
     spin = QSpinBox(parent)
     spin.setFont(_qt_font(th.font_body))
-    spin.setStyleSheet(f"""
-        QSpinBox {{
-            background-color: {th.input_bg};
-            color: {th.text_primary};
-            border: 1px solid {th.border_default};
-            border-radius: 4px;
-            padding: {sm.s(th.pad_xs)}px {sm.s(th.pad_sm)}px;
-        }}
-        QSpinBox:focus {{
-            border-color: {th.accent_blue};
-        }}
-        QSpinBox::up-button, QSpinBox::down-button {{
-            width: {sm.s(16)}px;
-        }}
-    """)
     if "minimum" in kw:
         spin.setMinimum(kw.pop("minimum"))
     if "maximum" in kw:
@@ -156,26 +122,6 @@ def themed_checkbutton(
     cb = QCheckBox(text, parent)
     th = current_theme()
     cb.setFont(_qt_font(th.font_body))
-    cb.setStyleSheet(f"""
-        QCheckBox {{
-            color: {th.text_primary};
-            spacing: {th.pad_sm}px;
-        }}
-        QCheckBox::indicator {{
-            width: 14px;
-            height: 14px;
-            border: 1px solid {th.border_default};
-            border-radius: 3px;
-            background-color: {th.input_bg};
-        }}
-        QCheckBox::indicator:checked {{
-            background-color: {th.accent_blue};
-            border-color: {th.accent_blue};
-        }}
-        QCheckBox::indicator:hover {{
-            border-color: {th.accent_blue};
-        }}
-    """)
     if "checked" in kw:
         cb.setChecked(kw.pop("checked"))
     if "command" in kw:
@@ -193,26 +139,6 @@ def themed_radiobutton(
     rb = QRadioButton(text, parent)
     th = current_theme()
     rb.setFont(_qt_font(th.font_body))
-    rb.setStyleSheet(f"""
-        QRadioButton {{
-            color: {th.text_primary};
-            spacing: {th.pad_sm}px;
-        }}
-        QRadioButton::indicator {{
-            width: 14px;
-            height: 14px;
-            border: 1px solid {th.border_default};
-            border-radius: 7px;
-            background-color: {th.input_bg};
-        }}
-        QRadioButton::indicator:checked {{
-            background-color: {th.accent_blue};
-            border-color: {th.accent_blue};
-        }}
-        QRadioButton::indicator:hover {{
-            border-color: {th.accent_blue};
-        }}
-    """)
     if "checked" in kw:
         rb.setChecked(kw.pop("checked"))
     obj_name = kw.pop("objectName", "")
@@ -223,29 +149,8 @@ def themed_radiobutton(
 
 def themed_combobox(parent: QWidget, **kw: Any) -> QComboBox:
     th = current_theme()
-    sm = qt_scale_manager()
     combo = QComboBox(parent)
     combo.setFont(_qt_font(th.font_body))
-    combo.setStyleSheet(f"""
-        QComboBox {{
-            background-color: {th.input_bg};
-            color: {th.text_primary};
-            border: 1px solid {th.border_default};
-            border-radius: 4px;
-            padding: {sm.s(th.pad_xs)}px {sm.s(th.pad_sm)}px;
-            min-height: {th.button_height - sm.s(th.pad_xs) * 2}px;
-        }}
-        QComboBox:focus {{
-            border-color: {th.accent_blue};
-        }}
-        QComboBox QAbstractItemView {{
-            background-color: {th.bg_primary};
-            color: {th.text_primary};
-            border: 1px solid {th.border_default};
-            selection-background-color: {th.accent_blue};
-            selection-color: {th.text_on_accent};
-        }}
-    """)
     if "items" in kw:
         combo.addItems(kw.pop("items"))
     if "editable" in kw:
@@ -262,21 +167,6 @@ def themed_labelframe(
     gb = QGroupBox(text, parent)
     th = current_theme()
     gb.setFont(_qt_font(th.font_section_title))
-    gb.setStyleSheet(f"""
-        QGroupBox {{
-            color: {th.text_primary};
-            border: 1px solid {th.border_default};
-            border-radius: 4px;
-            margin-top: {th.pad_md}px;
-            padding-top: {th.pad_md}px;
-            font-weight: bold;
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: {th.pad_sm}px;
-            padding: 0 {th.pad_xs}px;
-        }}
-    """)
     obj_name = kw.pop("objectName", "")
     if obj_name:
         gb.setObjectName(obj_name)
@@ -298,39 +188,9 @@ def themed_separator(
 def themed_treeview(parent: QWidget, **kw: Any) -> Any:
     from PySide6.QtWidgets import QTreeWidget
     th = current_theme()
-    sm = qt_scale_manager()
     tree = QTreeWidget(parent)
     tree.setFont(_qt_font(th.font_body))
     tree.setAlternatingRowColors(True)
-    tree.setStyleSheet(f"""
-        QTreeWidget {{
-            background-color: {th.bg_primary};
-            color: {th.text_primary};
-            border: 1px solid {th.border_default};
-            border-radius: 4px;
-            alternate-background-color: {th.input_bg};
-            outline: none;
-        }}
-        QTreeWidget::item {{
-            padding: {sm.s(2)}px;
-            border-bottom: 1px solid {th.border_default};
-        }}
-        QTreeWidget::item:selected {{
-            background-color: {th.accent_blue};
-            color: {th.text_on_accent};
-        }}
-        QTreeWidget::item:hover {{
-            background-color: {_derive_hover_bg(th.bg_primary)};
-        }}
-        QHeaderView::section {{
-            background-color: {th.panel_header_bg};
-            color: {th.text_muted};
-            border: none;
-            border-bottom: 1px solid {th.border_default};
-            padding: {sm.s(th.pad_xs)}px {sm.s(th.pad_sm)}px;
-            font-weight: bold;
-        }}
-    """)
     if "columns" in kw:
         headers = kw.pop("columns")
         tree.setHeaderLabels(headers)
@@ -400,6 +260,7 @@ def themed_section_header(parent: QWidget, text: str) -> QLabel:
     sm = qt_scale_manager()
     label = QLabel(f"  {text}", parent)
     label.setFixedHeight(sm.s(22))
+    label.setProperty("_dna_section_header", True)
     label.setStyleSheet(f"""
         background-color: {th.panel_header_bg};
         color: {th.text_primary};
@@ -439,9 +300,14 @@ def themed_palette_button(
 
 
 def style_button(btn: QPushButton, style: ButtonStyle = "secondary") -> None:
-    """按预定义样式名更新按钮 QSS。"""
+    """按预定义样式名更新按钮样式。"""
     th = current_theme()
-    btn_cfg = _BUTTON_STYLES[style]
-    bg = getattr(th, btn_cfg["bg_prop"])
-    fg = getattr(th, btn_cfg["fg_prop"])
-    btn.setStyleSheet(_build_button_qss(bg, fg))
+    if style != "secondary":
+        btn.setProperty("dnaBtnStyle", style)
+        btn_cfg = _BUTTON_STYLES[style]
+        bg = getattr(th, btn_cfg["bg_prop"])
+        fg = getattr(th, btn_cfg["fg_prop"])
+        btn.setStyleSheet(_build_button_qss(bg, fg))
+    else:
+        btn.setProperty("dnaBtnStyle", "")
+        btn.setStyleSheet("")

@@ -33,6 +33,7 @@ from src.panel.widgets import (
     themed_button,
     themed_frame,
     themed_label,
+    themed_paned_window,
 )
 from src.utils.i18n import t
 
@@ -196,7 +197,7 @@ class RecordPage(BasePage):
         self._btn_down.pack(side=tk.RIGHT, padx=2)
 
         # ── 分栏主体 ──
-        paned = ttk.PanedWindow(self.frame, orient=tk.HORIZONTAL)
+        paned = themed_paned_window(self.frame, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True, padx=th.pad_xl, pady=th.pad_sm)
 
         # 左栏: 实时事件流

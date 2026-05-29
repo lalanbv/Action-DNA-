@@ -65,6 +65,8 @@ class CanvasTheme:
     port_in_fill: str = "#e0e0e0"
     port_in_outline: str = "#0078d4"
     port_out_outline: str = "#3c3c3c"
+    port_in_glow: str = "#0078d4"
+    port_out_glow: str = "#e0e0e0"
 
     # ── 阴影 ──
     shadow_color: str = "#181818"
@@ -165,7 +167,7 @@ class CanvasTheme:
     node_padding_h: int = 12
     node_padding_v: int = 8
     toolbar_height: int = 36
-    panel_width_left: int = 160
+    panel_width_left: int = 220
     panel_width_right: int = 260
     minimap_size: int = 280
     minimap_margin: int = 12

@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
+from src.utils.i18n import t
+
 if TYPE_CHECKING:
     from src.core.vision import ScreenCapture, TemplateMatcher
 
@@ -62,7 +64,6 @@ class Condition:
 
     def describe(self) -> str:
         """返回人类可读的条件描述"""
-        from src.utils.i18n import t
         match self.condition_type:
             case ConditionType.IMAGE_FOUND:
                 name = os.path.basename(self.image_path) if self.image_path else t("common.not_set")
@@ -89,7 +90,6 @@ class Condition:
 
     @staticmethod
     def type_label(ct: ConditionType) -> str:
-        from src.utils.i18n import t
         key = _CONDITION_TYPE_I18N_KEYS.get(ct)
         return t(key) if key else ct.name
 

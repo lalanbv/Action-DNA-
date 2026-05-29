@@ -307,12 +307,13 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
                    background=[("active", th.bg_surface_hover)])
 
         style.configure("TPanedwindow",
-                         background=th.page_bg,
-                         sashthickness=scale_manager().s(6),
-                         sashrelief=tk.RAISED)
+                         background=th.separator_color,
+                         sashthickness=scale_manager().s(2),
+                         sashrelief=tk.FLAT,
+                         borderwidth=0)
         style.map("TPanedwindow",
-                   background=[("active", th.accent_blue),
-                               ("!active", th.border_default)])
+                   background=[("active", th.accent_blue_dim),
+                               ("!active", th.separator_color)])
 
         sm = scale_manager()
         style.configure("TNotebook", background=th.page_bg, borderwidth=0)
@@ -325,7 +326,12 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
                    expand=[("selected", [0, 0, 0, sm.s(2)])])
 
     def _on_theme_changed(self) -> None:
-        """主题切换时重新配置全局样式"""
+        """主题切换时重新配置全局样式
+
+        只更新全局元素（root 背景、ttk 样式、状态栏），
+        页面自身的控件由各页面注册的 apply_theme 回调负责就地更新，
+        不需要销毁重建整个页面。
+        """
         th = current_theme()
         sm = scale_manager()
         self.root.configure(bg=th.page_bg)
@@ -333,9 +339,8 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         self._global_bar.configure(bg=th.bg_surface, height=sm.s(36))
         self._global_dot.configure(bg=th.bg_surface)
         self._global_label.configure(bg=th.bg_surface)
+        self._global_dot.itemconfig(self._dot_oval, fill=th.status_ready)
         self._last_resolved = resolved_theme_mode()
-        if self._current_page_id:
-            self.navigate_to(self._current_page_id)
 
     def _start_system_theme_poller(self) -> None:
         """当模式为 system 时，每 30 秒检测 OS 主题变化"""
@@ -498,6 +503,8 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         if build:
             page.build()
         page.frame.pack(fill=tk.BOTH, expand=True)
+        if not build:
+            page.apply_theme()
         page.on_enter(**kwargs)
         self._current_page = page
         self._current_page_id = page_id
@@ -536,6 +543,41 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
 
     def get_executor_source(self) -> str | None:
         return self._executor_source_page
+
+    def schedule_restart(self) -> None:
+        """停止独占资源 → 启动新进程 → 终止当前进程。"""
+        self._stop_services()
+        try:
+            from src.utils.restart import restart_app
+            restart_app()
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("重启失败，尝试恢复服务")
+            from tkinter import messagebox
+            messagebox.showerror(t("app.title"), t("settings.restart_failed"))
+            self._services_ready = True
+
+    def _stop_services(self) -> None:
+        """按正确顺序停止所有服务，释放独占资源防止新旧进程冲突。
+
+        顺序：回调/轮询 → 热键 → 执行器 → 插件 → 截图 → 缓存
+        热键和执行器必须在最前面释放，否则新进程无法注册同一系统热键。
+        """
+        self._unregister_theme_callback()
+        self._stop_system_theme_poller()
+        self._stop_monitor_poll()
+        self._stop_pulse()
+        if self.hotkey_manager:
+            self.hotkey_manager.shutdown()
+        if self.executor:
+            self.executor.stop()
+        if self.plugin_loader:
+            self.plugin_loader.stop_watcher()
+            self.plugin_loader.unload_all()
+        if self.capture:
+            self.capture.close()
+        if self.matcher:
+            self.matcher.clear_cache()
+        self._services_ready = False
 
     def run(self):
         self.root.mainloop()

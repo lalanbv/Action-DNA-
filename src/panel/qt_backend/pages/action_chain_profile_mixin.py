@@ -17,8 +17,9 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
     要求宿主类提供:
       - self._controller: ActionChainController
       - self._model: ChainModel
-      - self._loop_cb: QCheckBox
+      - self._loop_combo: QComboBox (三模式: single/infinite/finite)
       - self._loop_count_spin: QSpinBox
+      - self._loop_container: QFrame
       - self._profile_combo: QComboBox
       - self._step_tree: QTreeWidget
       - self._append_log(msg)
@@ -32,6 +33,8 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
       - self._selected_step_idx: int | None
       - self.app: QtPanelApp
       - self.schedule(ms, cb)
+      - self._loop_mode() -> str
+      - self._set_loop_mode(mode, count)
     """
 
     profile_i18n_prefix = "chain"
@@ -111,8 +114,16 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
     # ── 执行控制 ──────────────────────────────────────────
 
     def _sync_loop_config(self):
-        self._model.graph.loop = self._loop_cb.isChecked()
-        self._model.graph.loop_count = self._loop_count_spin.value() if not self._loop_cb.isChecked() else 0
+        mode = self._loop_mode()
+        if mode == "single":
+            self._model.graph.loop = False
+            self._model.graph.loop_count = 1
+        elif mode == "infinite":
+            self._model.graph.loop = True
+            self._model.graph.loop_count = 0
+        else:  # finite
+            self._model.graph.loop = True
+            self._model.graph.loop_count = max(1, self._loop_count_spin.value())
 
     def _on_start(self):
         self._sync_loop_config()
@@ -137,9 +148,13 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
 
     def _on_chain_loaded(self, **_kw):
         self._refresh_step_list()
-        has_loop = self._model.graph.loop
-        self._loop_cb.setChecked(has_loop)
-        self._loop_count_spin.setValue(self._model.graph.loop_count)
+        graph = self._model.graph
+        if not graph.loop:
+            self._set_loop_mode("single")
+        elif graph.loop_count == 0:
+            self._set_loop_mode("infinite")
+        else:
+            self._set_loop_mode("finite", graph.loop_count)
         self._refresh_profile_list()
         self._refresh_monitor_list()
 
@@ -195,8 +210,13 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
         state = result.state
         if result.graph_copied:
             self._refresh_step_list()
-            self._loop_cb.setChecked(self._model.graph.loop)
-            self._loop_count_spin.setValue(self._model.graph.loop_count)
+            graph = self._model.graph
+            if not graph.loop:
+                self._set_loop_mode("single")
+            elif graph.loop_count == 0:
+                self._set_loop_mode("infinite")
+            else:
+                self._set_loop_mode("finite", graph.loop_count)
 
         self._on_executor_state(state=state)
 

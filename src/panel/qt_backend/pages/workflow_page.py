@@ -8,16 +8,16 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
-    QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTabWidget,
-    QVBoxLayout, QWidget,
+    QComboBox, QFrame, QHBoxLayout, QLabel,
+    QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QSplitter,
+    QTabWidget, QVBoxLayout, QWidget,
 )
 
 from src.core.debug.debugger import Debugger
 from src.core.debug.ring_buffer_log import LogEventType, RingBufferLog
 from src.core.events.event_names import EventName
 from src.panel.models.enums import EdgeStyle
-from src.core.flow import FlowNode, ensure_loop_edge, find_loop_edge, remove_loop_edge
+from src.core.flow import FlowNode, find_loop_edge
 from src.panel.canvas.theme import current_theme
 from src.panel.pages.page_registry import PAGE_HOME
 from src.panel.qt_backend.canvas.graph_canvas import QtGraphCanvas
@@ -150,10 +150,28 @@ class QtWorkflowPage(
 
         lay1.addWidget(_sep())
 
-        self._loop_cb = QCheckBox(t("common.infinite_loop"))
-        self._loop_cb.setChecked(True)
-        self._loop_cb.stateChanged.connect(self._on_loop_toggled)
-        lay1.addWidget(self._loop_cb)
+        self._loop_combo = QComboBox()
+        self._loop_combo.addItem(t("common.loop.single"), "single")
+        self._loop_combo.addItem(t("common.loop.infinite"), "infinite")
+        self._loop_combo.addItem(t("common.loop.finite"), "finite")
+        self._loop_combo.setCurrentIndex(1)
+        self._loop_combo.currentIndexChanged.connect(self._on_loop_mode_changed)
+        lay1.addWidget(self._loop_combo)
+
+        self._loop_spin = QSpinBox()
+        self._loop_spin.setRange(1, 9999)
+        self._loop_spin.setValue(1)
+        self._loop_spin.setVisible(False)
+        self._loop_spin.setStyleSheet(
+            f"QSpinBox {{ background: {th.input_bg}; color: {th.text_primary}; "
+            f"border: 1px solid {th.border_default}; padding: 2px 4px; }}"
+        )
+        lay1.addWidget(self._loop_spin)
+
+        self._loop_times_label = QLabel(t("common.loop.times"))
+        self._loop_times_label.setStyleSheet(f"color: {th.text_muted};")
+        self._loop_times_label.setVisible(False)
+        lay1.addWidget(self._loop_times_label)
 
         lay1.addWidget(_sep())
 
@@ -194,6 +212,7 @@ class QtWorkflowPage(
         lay2.addWidget(_sep())
 
         self._edge_style_combo = QComboBox()
+        self._edge_style_combo.setMinimumWidth(sm.s(100))
         self._edge_style_combo.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToContents,
         )
@@ -244,6 +263,8 @@ class QtWorkflowPage(
 
         self._toolbar1 = toolbar1
         self._toolbar2 = toolbar2
+
+        self._refresh_profiles()
 
     # ── 状态栏 ──────────────────────────────────────────────
 
@@ -320,7 +341,7 @@ class QtWorkflowPage(
         self._build_node_palette()
         self._canvas = QtGraphCanvas(self._on_canvas_event, self._hsplitter)
         self._props_scroll = QScrollArea()
-        self._props_scroll.setFixedWidth(sm.s(th.panel_width_right))
+        self._props_scroll.setMinimumWidth(sm.s(150))
         self._props_scroll.setWidgetResizable(True)
         self._props_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self._props_scroll.setStyleSheet(f"background-color: {th.page_bg};")
@@ -329,6 +350,12 @@ class QtWorkflowPage(
         self._props_scroll.setWidget(self._props_inner)
         self._props_inner_layout = QVBoxLayout(self._props_inner)
         self._props_inner_layout.setContentsMargins(4, 4, 4, 4)
+        # 属性面板标题
+        props_title = QLabel(t("workflow.properties.title"))
+        props_title.setStyleSheet(
+            f"color: {th.text_primary}; font-weight: bold; font-size: {sm.s(10)}px;"
+        )
+        self._props_inner_layout.addWidget(props_title)
         self._props_inner_layout.addStretch()
 
         self._hsplitter.addWidget(self._palette_widget)
@@ -337,6 +364,12 @@ class QtWorkflowPage(
         self._hsplitter.setStretchFactor(0, 0)
         self._hsplitter.setStretchFactor(1, 1)
         self._hsplitter.setStretchFactor(2, 0)
+        # 初始面板宽度分配
+        self._hsplitter.setSizes([
+            sm.s(th.panel_width_left),
+            max(400, self._hsplitter.width() - sm.s(th.panel_width_left) - sm.s(th.panel_width_right)),
+            sm.s(th.panel_width_right),
+        ])
 
         self._log_container = QWidget()
         self._log_container.setVisible(self._log_visible)
@@ -459,20 +492,50 @@ class QtWorkflowPage(
 
     # ── 循环边管理 ──────────────────────────────────────────
 
-    def _on_loop_toggled(self, state):
-        checked = state == Qt.CheckState.Checked.value
-        if not checked:
-            remove_loop_edge(self._model.graph)
-        else:
-            ensure_loop_edge(self._model.graph)
-        self._canvas.render_graph(self._model.graph)
+    def _on_loop_mode_changed(self) -> None:
+        mode = self._loop_combo.currentData()
+        finite = mode == "finite"
+        self._loop_spin.setVisible(finite)
+        self._loop_times_label.setVisible(finite)
+
+        loop = mode != "single"
+        loop_count = 0 if mode == "infinite" else (self._loop_spin.value() if finite else 1)
+        self._controller.update_loop(loop, loop_count)
+        # render_graph is already called by _on_undo_state_changed
 
     # ── 执行控制 ──────────────────────────────────────────
 
+    def _qt_loop_count(self) -> int:
+        mode = self._loop_combo.currentData()
+        if mode == "infinite":
+            return 0
+        elif mode == "finite":
+            return self._loop_spin.value()
+        return 1
+
+    def _set_loop_from_model(self, loop: bool, loop_count: int) -> None:
+        self._loop_combo.blockSignals(True)
+        try:
+            if not loop:
+                self._loop_combo.setCurrentIndex(0)
+                self._loop_spin.setVisible(False)
+                self._loop_times_label.setVisible(False)
+            elif loop_count == 0:
+                self._loop_combo.setCurrentIndex(1)
+                self._loop_spin.setVisible(False)
+                self._loop_times_label.setVisible(False)
+            else:
+                self._loop_combo.setCurrentIndex(2)
+                self._loop_spin.setValue(loop_count)
+                self._loop_spin.setVisible(True)
+                self._loop_times_label.setVisible(True)
+        finally:
+            self._loop_combo.blockSignals(False)
+
     def _on_start(self):
         try:
-            self._model.graph.loop = self._loop_cb.isChecked()
-            self._model.graph.loop_count = 0 if self._loop_cb.isChecked() else 1
+            self._model.graph.loop = self._loop_combo.currentData() != "single"
+            self._model.graph.loop_count = self._qt_loop_count()
             self._controller.start_chain()
         except Exception as e:
             self._show_error(t("workflow.msg.start_failed"), str(e))
@@ -490,7 +553,7 @@ class QtWorkflowPage(
 
     def _on_graph_loaded(self, **_kwargs):
         has_loop = find_loop_edge(self._model.graph) is not None
-        self._loop_cb.setChecked(has_loop)
+        self._set_loop_from_model(has_loop, self._model.graph.loop_count if has_loop else 0)
         self._canvas.render_graph(self._model.graph)
         self._refresh_monitor_list()
         self._append_log(f"{t('workflow.msg.graph_loaded')}: {self._model.graph.describe()}")
@@ -590,6 +653,8 @@ class QtWorkflowPage(
         if not hasattr(self, "_canvas"):
             return
 
+        self._refresh_profiles()
+
         import_steps = kwargs.get("import_steps")
         if import_steps:
             if not self._resolve_import_conflict(
@@ -638,7 +703,7 @@ class QtWorkflowPage(
         if result.graph_copied:
             self._canvas.render_graph(self._model.graph)
             has_loop = find_loop_edge(self._model.graph) is not None
-            self._loop_cb.setChecked(has_loop)
+            self._set_loop_from_model(has_loop, self._model.graph.loop_count if has_loop else 0)
         if result.state != ExecutorState.IDLE:
             self._on_executor_state(state=result.state)
             self._refresh_monitor_list()

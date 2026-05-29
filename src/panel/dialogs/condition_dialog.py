@@ -7,17 +7,26 @@ from src.core.condition import Condition, ConditionType
 from src.panel.canvas.scale import scale_manager
 from src.panel.canvas.theme import current_theme
 from src.panel.dialogs._dialog_utils import make_dialog
-from src.panel.widgets import themed_button, themed_entry, themed_frame, themed_label, themed_labelframe, themed_radiobutton, themed_separator, themed_spinbox
+from src.panel.widgets import themed_button, themed_dropdown, themed_entry, themed_frame, themed_label, themed_labelframe, themed_radiobutton, themed_spinbox
 from src.utils.i18n import t
 
-# 简单条件类型（不含复合类型）
-_SIMPLE_CONDITION_TYPES = [
-    ConditionType.IMAGE_FOUND,
-    ConditionType.IMAGE_NOT_FOUND,
-    ConditionType.VARIABLE_EXISTS,
-    ConditionType.VARIABLE_COMPARE,
-    ConditionType.ELAPSED_TIME,
+# 简单条件类型选项（不含复合类型）
+_SIMPLE_CONDITION_OPTIONS = [
+    (ct.name, key)
+    for ct, key in [
+        (ConditionType.IMAGE_FOUND, "dialog.condition_type.image_found"),
+        (ConditionType.IMAGE_NOT_FOUND, "dialog.condition_type.image_not_found"),
+        (ConditionType.VARIABLE_EXISTS, "dialog.condition_type.variable_exists"),
+        (ConditionType.VARIABLE_COMPARE, "dialog.condition_type.variable_compare"),
+        (ConditionType.ELAPSED_TIME, "dialog.condition_type.elapsed_time"),
+    ]
 ]
+
+# 比较运算符选项（非 i18n，直接显示符号）
+_COMPARE_OP_OPTIONS = [
+    ("==", "=="), ("!=", "!="), (">", ">"), ("<", "<"), (">=", ">="), ("<=", "<="),
+]
+
 
 
 def open_condition_dialog(parent, condition: Condition | None, title: str, on_done):
@@ -35,11 +44,12 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
 
     # 条件类型选择
     themed_label(main, text=t("dialog.label.condition_type"), style="body").grid(row=0, column=0, sticky=tk.W, pady=th.pad_xs)
-    var_type = tk.StringVar(value=condition.condition_type.name)
-    type_names = [Condition.type_label(ct) for ct in _SIMPLE_CONDITION_TYPES]
-    type_values = [ct.name for ct in _SIMPLE_CONDITION_TYPES]
-    type_combo = ttk.Combobox(main, textvariable=var_type, values=type_names, state="readonly", width=28)
-    type_combo.grid(row=0, column=1, sticky=tk.W, pady=th.pad_xs, padx=th.pad_sm)
+    type_dropdown = themed_dropdown(
+        main, options=_SIMPLE_CONDITION_OPTIONS,
+        value=condition.condition_type.name, state="readonly", width=28,
+        command=lambda _: rebuild_fields(),
+    )
+    type_dropdown.grid(row=0, column=1, sticky=tk.W, pady=th.pad_xs, padx=th.pad_sm)
 
     # 动态字段容器
     fields_frame = themed_labelframe(main, text=t("dialog.label.condition_params"))
@@ -61,9 +71,10 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
     children_list: list[Condition] = list(condition.children) if condition.children else []
 
     def _get_selected_type() -> ConditionType:
-        idx = type_combo.current()
-        name = type_values[idx] if 0 <= idx < len(type_values) else var_type.get()
-        return ConditionType[name]
+        val = type_dropdown.get_value()
+        if val in ConditionType.__members__:
+            return ConditionType[val]
+        return ConditionType.IMAGE_FOUND
 
     def rebuild_fields(*_):
         """根据条件类型重建动态字段"""
@@ -82,7 +93,6 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
         elif selected == ConditionType.ELAPSED_TIME:
             _build_time_fields(fields_frame, r, var_timer_name, var_timeout)
 
-    type_combo.bind("<<ComboboxSelected>>", rebuild_fields)
     rebuild_fields()
 
     # ── 复合条件区域 ──────────────────────────────────────
@@ -147,7 +157,8 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
     def on_ok():
         compound_mode = var_compound.get()
         if compound_mode != "NONE" and children_list:
-            result = Condition(condition_type=ConditionType[compound_mode], children=list(children_list))
+            ct = ConditionType[compound_mode] if compound_mode in ConditionType.__members__ else ConditionType.COMPOUND_AND
+            result = Condition(condition_type=ct, children=list(children_list))
         else:
             result = Condition(
                 condition_type=_get_selected_type(),
@@ -209,8 +220,12 @@ def _build_var_compare_fields(parent, start_row, var_name, var_op, var_x, var_y)
     )
 
     themed_label(parent, text=t("dialog.label.compare_operator")).grid(row=start_row + 1, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    ttk.Combobox(parent, textvariable=var_op, values=["==", "!=", ">", "<", ">=", "<="],
-                 state="readonly", width=6).grid(row=start_row + 1, column=1, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
+    op_dropdown = themed_dropdown(
+        parent, options=_COMPARE_OP_OPTIONS,
+        value=var_op.get(), state="readonly", width=6,
+        i18n=False, command=lambda v: var_op.set(v),
+    )
+    op_dropdown.grid(row=start_row + 1, column=1, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
 
     themed_label(parent, text=t("dialog.label.target_value_x")).grid(row=start_row + 2, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
     themed_spinbox(parent, from_=-9999, to=9999, textvariable=var_x, width=8).grid(

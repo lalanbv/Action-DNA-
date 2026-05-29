@@ -67,32 +67,7 @@ class QtPluginPage(QtBasePage):
         self._tree.setHeaderLabels(columns)
         self._tree.setRootIsDecorated(False)
         self._tree.setAlternatingRowColors(True)
-        self._tree.setStyleSheet(f"""
-            QTreeWidget {{
-                background-color: {th.bg_surface};
-                color: {th.text_primary};
-                border: 1px solid {th.border_default};
-                border-radius: {sm.s(4)}px;
-                font-size: {sm.s(13)}px;
-                alternate-background-color: {th.input_bg};
-            }}
-            QTreeWidget::item {{
-                padding: {sm.s(4)}px;
-                border-bottom: 1px solid {th.border_default};
-            }}
-            QTreeWidget::item:selected {{
-                background-color: {th.accent_blue};
-                color: {th.text_on_accent};
-            }}
-            QHeaderView::section {{
-                background-color: {th.bg_surface};
-                color: {th.text_muted};
-                border: none;
-                border-bottom: 1px solid {th.border_default};
-                padding: {sm.s(4)}px {sm.s(8)}px;
-                font-weight: bold;
-            }}
-        """)
+        self._apply_tree_style(th, sm)
 
         header = self._tree.header()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -153,16 +128,6 @@ class QtPluginPage(QtBasePage):
         self._detail_text = QTextEdit()
         self._detail_text.setReadOnly(True)
         self._detail_text.setMaximumHeight(sm.s(120))
-        self._detail_text.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: {th.input_bg};
-                color: {th.text_primary};
-                border: 1px solid {th.border_default};
-                border-radius: {sm.s(3)}px;
-                padding: {sm.s(4)}px;
-                font-family: monospace;
-            }}
-        """)
         detail_layout.addWidget(self._detail_text)
 
         layout.addWidget(detail_frame)
@@ -323,3 +288,49 @@ class QtPluginPage(QtBasePage):
             self._disable_selected()
         else:
             self._enable_selected()
+
+    def _apply_tree_style(self, th, sm) -> None:
+        self._tree.setStyleSheet(f"""
+            QTreeWidget {{
+                background-color: {th.bg_surface};
+                color: {th.text_primary};
+                border: 1px solid {th.border_default};
+                border-radius: {sm.s(4)}px;
+                font-size: {sm.s(13)}px;
+                alternate-background-color: {th.input_bg};
+            }}
+            QTreeWidget::item {{
+                padding: {sm.s(4)}px;
+                border-bottom: 1px solid {th.border_default};
+            }}
+            QTreeWidget::item:selected {{
+                background-color: {th.accent_blue};
+                color: {th.text_on_accent};
+            }}
+            QHeaderView::section {{
+                background-color: {th.bg_surface};
+                color: {th.text_muted};
+                border: none;
+                border-bottom: 1px solid {th.border_default};
+                padding: {sm.s(4)}px {sm.s(8)}px;
+                font-weight: bold;
+            }}
+        """)
+
+    def apply_theme(self) -> None:
+        super().apply_theme()
+        th = current_theme()
+        sm = qt_scale_manager()
+        if hasattr(self, "_tree"):
+            self._apply_tree_style(th, sm)
+        if hasattr(self, "_detail_text"):
+            self._detail_text.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: {th.input_bg};
+                    color: {th.text_primary};
+                    border: 1px solid {th.border_default};
+                    border-radius: {sm.s(3)}px;
+                    padding: {sm.s(4)}px;
+                    font-family: monospace;
+                }}
+            """)

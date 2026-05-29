@@ -1,11 +1,15 @@
 """面板 UI 组件。"""
 
 from src.panel.components.base import DNAWidget
+from src.panel.components.dna_button import DNAButton
+from src.panel.components.dna_dropdown import DNADropdown
+from src.panel.components.dna_toggle import DNAToggle
 from src.panel.components.indicators import Badge
 from src.panel.components.themed_checkbox import ThemedCheckbox
 from src.panel.components.themed_entry import ThemedEntry
 from src.panel.components.themed_radio import ThemedRadio
 from src.panel.components.log_viewer import LogViewer
+from src.panel.components.loop_controls import LoopControls
 from src.panel.components.navigation import Breadcrumb
 from src.panel.components.profile_bar import ProfileBar
 from src.panel.components.progress_ring import ProgressRing
@@ -26,8 +30,12 @@ __all__ = [
     "CanvasTooltip",
     "Badge",
     "Breadcrumb",
+    "DNAButton",
+    "DNADropdown",
+    "DNAToggle",
     "DNAWidget",
     "LogViewer",
+    "LoopControls",
     "ProfileBar",
     "ProgressRing",
     "PropertyPanel",

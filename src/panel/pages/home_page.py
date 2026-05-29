@@ -27,6 +27,7 @@ from src.panel.components.toolbar import ToolbarFrame
 from src.panel.components.toolbar_icons import ICONS
 from src.panel.widgets import (
     themed_button,
+    themed_dropdown,
     themed_frame,
     themed_label,
     themed_labelframe,
@@ -378,20 +379,22 @@ class HomePage(HomeStateMixin, BasePage):
 
     def _widget_combo_needs_update(self, combo, profiles: tuple) -> bool:
         if combo and combo.winfo_exists():
-            return profiles != combo["values"]
+            current_vals = tuple(v for v, _ in combo.get_options())
+            return profiles != current_vals
         return False
 
     def _widget_set_combo_items(
         self, combo, profiles: tuple, current: str | None, page_type: PageType,
     ) -> None:
         if combo and combo.winfo_exists():
-            combo["values"] = profiles
+            options = [(n, n) for n in profiles]
+            combo.set_options(options)
             var = self._section_vars[page_type]
             if profiles:
                 if current and current in profiles:
-                    var.set(current)
+                    combo.set_value(current)
                 else:
-                    var.set(profiles[0])
+                    combo.set_value(profiles[0])
 
     def _build_section_running(
         self, parent: tk.Frame, page_type: PageType, state: SectionState, th, sm,
@@ -498,21 +501,20 @@ class HomePage(HomeStateMixin, BasePage):
 
         profiles = state.launchable_profiles
         var = self._section_vars[page_type]
-        combo: ttk.Combobox | None = None
+        combo = None
         if profiles:
             if state.profile_name and state.profile_name in profiles:
                 var.set(state.profile_name)
             else:
                 var.set(profiles[0])
-            combo = ttk.Combobox(
-                inner, textvariable=var,
-                values=profiles, state="readonly", width=18,
+            profile_options = [(n, n) for n in profiles]
+            combo = themed_dropdown(
+                inner, options=profile_options,
+                value=var.get(), state="readonly", width=18,
+                i18n=False, variable=var,
+                command=lambda _v, pt=page_type: self._on_section_profile_selected(pt),
             )
             combo.pack(side=tk.LEFT, padx=(0, sm.s(8)))
-            combo.bind(
-                "<<ComboboxSelected>>",
-                lambda _e: self._on_section_profile_selected(page_type),
-            )
         else:
             var.set("")
             themed_label(

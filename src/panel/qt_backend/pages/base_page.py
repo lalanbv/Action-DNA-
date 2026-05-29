@@ -139,6 +139,32 @@ class QtBasePage(ThemeCallbackMixin, QWidget):
     def apply_theme(self) -> None:
         th = current_theme()
         self.setStyleSheet(f"background-color: {th.page_bg};")
+        # Force Qt to re-evaluate global QSS for all children
+        self.style().unpolish(self)
+        self.style().polish(self)
+        # Re-apply inline styles for specialized widgets (palette buttons, section headers)
+        for child in self.findChildren(QWidget):
+            prop = child.property("dnaBtnStyle")
+            if prop and isinstance(prop, str) and prop:
+                from src.panel.qt_backend.widgets import _build_button_qss
+                from src.panel.canvas.theme.style_mappings import _BUTTON_STYLES
+                cfg = _BUTTON_STYLES.get(prop)
+                if cfg:
+                    bg = getattr(th, cfg["bg_prop"])
+                    fg = getattr(th, cfg["fg_prop"])
+                    child.setStyleSheet(_build_button_qss(bg, fg))
+            # Update section headers
+            if getattr(child, "_dna_section_header", False):
+                from src.utils.i18n import t
+                sm = qt_scale_manager()
+                text = child.text().strip()
+                child.setStyleSheet(f"""
+                    background-color: {th.panel_header_bg};
+                    color: {th.text_primary};
+                    font-weight: bold;
+                    font-size: {sm.s(9)}px;
+                    border-bottom: 1px solid {th.border_default};
+                """)
 
     # ── 对话框工具 ──────────────────────────────────────────
 

@@ -45,6 +45,7 @@ class QtSchedulePage(QtBasePage):
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setStyleSheet(f"background-color: {th.page_bg};")
 
+        self._scroll = scroll
         self._list_container = QWidget()
         self._list_layout = QVBoxLayout(self._list_container)
         self._list_layout.setContentsMargins(sm.s(th.pad_md), sm.s(th.pad_md), sm.s(th.pad_md), sm.s(th.pad_md))
@@ -96,12 +97,10 @@ class QtSchedulePage(QtBasePage):
                 info_text += f" | {enabled_text}"
 
             info_lbl = QLabel(info_text)
-            info_lbl.setStyleSheet(f"color: {th.text_primary};")
             row_layout.addWidget(info_lbl, 1)
 
             cb = QCheckBox(t("common.enabled"))
             cb.setChecked(entry["enabled"])
-            cb.setStyleSheet(f"color: {th.text_primary};")
             cb.toggled.connect(lambda checked, idx=i: self._toggle_enabled(idx, checked))
             row_layout.addWidget(cb)
 
@@ -187,6 +186,14 @@ class QtSchedulePage(QtBasePage):
     def _save_and_back(self) -> None:
         self._save_current_config()
         self.app.navigate_to(PAGE_HOME)
+
+    def apply_theme(self) -> None:
+        super().apply_theme()
+        th = current_theme()
+        if hasattr(self, "_scroll"):
+            self._scroll.setStyleSheet(f"background-color: {th.page_bg};")
+        if hasattr(self, "_schedule_rows"):
+            self._render_list()
 
     def destroy_page(self) -> None:
         if getattr(self, "_dirty", False):

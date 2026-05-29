@@ -319,6 +319,15 @@ class QtRecordPage(QtBasePage):
         else:
             super().keyPressEvent(event)
 
+    def apply_theme(self) -> None:
+        super().apply_theme()
+        th = current_theme()
+        sm = qt_scale_manager()
+        if hasattr(self, "_event_tree"):
+            self._apply_tree_style(self._event_tree, th, sm)
+        if hasattr(self, "_step_tree"):
+            self._apply_tree_style(self._step_tree, th, sm)
+
     def destroy_page(self) -> None:
         if self._bridge.is_recording:
             self._bridge.stop_and_convert()

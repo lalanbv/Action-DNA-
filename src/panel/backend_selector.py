@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 
@@ -31,6 +32,11 @@ def _get_backend_from_config() -> str | None:
     return None
 
 
+def _is_pyside6_available() -> bool:
+    """检测 PySide6 是否已安装（不触发实际导入）。"""
+    return importlib.util.find_spec("PySide6") is not None
+
+
 def _get_backend() -> str:
     """按优先级确定 GUI 后端：环境变量 > 配置文件 > 默认值 qt。"""
     env = os.environ.get("DNA_GUI_BACKEND", "").lower().strip()
@@ -42,6 +48,10 @@ def _get_backend() -> str:
     config_backend = _get_backend_from_config()
     if config_backend is not None:
         return config_backend
+
+    # PySide6 未安装时自动回退到 tkinter，不再打印警告
+    if not _is_pyside6_available():
+        return "tk"
 
     return "qt"
 

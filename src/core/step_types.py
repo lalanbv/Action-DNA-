@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar, Union
 
 from src.core.action import ActionType, DetectMode, FoundAction
+from src.utils.i18n import t
 
 
 @dataclass
@@ -58,7 +59,6 @@ class ClickImageStep(BaseStep):
     hold_duration: float = 0.5
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         name = os.path.basename(self.image_path) if self.image_path else t("common.not_set")
         fa_keys = {
@@ -93,7 +93,6 @@ class ClickPosStep(BaseStep):
     move_speed: float = 0.5
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         if self.use_coord_var and self.coord_var_name:
             return t("action.describe.click_var", name=self.coord_var_name)
@@ -128,7 +127,6 @@ class PressKeyStep(BaseStep):
     text: str = ""
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         if self.text:
             return t("action.describe.type_text", text=self.text[:30])
@@ -153,7 +151,6 @@ class HoldKeyStep(BaseStep):
     hold_duration: float = 0.0
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         keys = self.keys_hold or self.key
 
@@ -182,7 +179,6 @@ class MouseScrollStep(BaseStep):
     pos_y: int = 0
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         parts = []
         if self.scroll_clicks != 0:
@@ -211,7 +207,6 @@ class MouseMoveStep(BaseStep):
     button: str = ""
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         parts = []
         btn_label = ""
@@ -240,7 +235,6 @@ class WaitStep(BaseStep):
     wait_seconds: float = 1.0
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         return t("action.describe.wait", seconds=self.wait_seconds)
 
@@ -256,7 +250,6 @@ class WaitRandomStep(BaseStep):
     wait_max: float = 2.0
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         return t("action.describe.wait_random", min=self.wait_min, max=self.wait_max)
 
@@ -273,7 +266,6 @@ class KeyComboStep(BaseStep):
     hold_duration: float = 0.0
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         mode_map = {
             "hold_tap": "common.mode.hold_tap",
@@ -296,7 +288,6 @@ class MultiKeySequenceStep(BaseStep):
     key_interval_max: float = 0.3
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         return t(
             "action.describe.multi_key_sequence",
@@ -319,7 +310,6 @@ class IdleBehaviorStep(BaseStep):
     idle_action_chance: float = 0.2
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         return t(
             "action.describe.idle",
@@ -339,7 +329,6 @@ class StartTimerStep(BaseStep):
     timer_timeout: float = 0.0
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         if self.timer_timeout > 0:
             return t(
@@ -364,7 +353,6 @@ class PixelSearchStep(BaseStep):
     color_preset: str = ""
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         color = self.color_preset or str(self.target_color)
         return t("action.describe.pixel_search", color=color, tolerance=self.color_tolerance)
@@ -382,7 +370,6 @@ class OcrCheckStep(BaseStep):
     ocr_fuzzy: bool = True
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         return t("action.describe.ocr_check", text=self.target_text)
 
@@ -404,7 +391,6 @@ class MouseDragStep(BaseStep):
     duration: float = 0.5
 
     def describe(self) -> str:
-        from src.utils.i18n import t
 
         btn_label = ""
         if self.button == "right":
@@ -421,6 +407,7 @@ class MouseDragStep(BaseStep):
         )
 
 
+@dataclass
 class SubGraphStep(BaseStep):
     """子图嵌套 — 引用并执行另一个 FlowGraph 配置。"""
 
@@ -429,7 +416,6 @@ class SubGraphStep(BaseStep):
     graph_ref: str = ""
 
     def describe(self) -> str:
-        from src.utils.i18n import t
         return t("action.describe.sub_graph", ref=self.graph_ref or "?")
 
 

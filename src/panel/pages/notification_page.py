@@ -17,6 +17,7 @@ from src.panel.pages.page_registry import PAGE_HOME, register_page
 from src.panel.widgets import (
     themed_button,
     themed_checkbutton,
+    themed_dropdown,
     themed_entry,
     themed_frame,
     themed_label,
@@ -33,6 +34,10 @@ _TRIGGER_OPTIONS: list[tuple[str, str]] = [
 ]
 
 _WEBHOOK_TYPE_VALUES = ["generic", "dingtalk", "wechat_work", "discord", "bark"]
+
+_WEBHOOK_TYPE_OPTIONS = [
+    (v, f"notification.webhook.type.{v}") for v in _WEBHOOK_TYPE_VALUES
+]
 
 _CHANNEL_I18N_KEYS: dict[str, str] = {
     "system_notify": "notification.channel.system",
@@ -147,12 +152,12 @@ class NotificationPage(BasePage):
                     side=tk.LEFT, fill=tk.X, expand=True,
                 )
             elif widget == "combo":
-                self._webhook_type_combo = ttk.Combobox(
-                    row, textvariable=var, state="readonly", width=15,
-                    values=[t(f"notification.webhook.type.{v}") for v in _WEBHOOK_TYPE_VALUES],
+                self._webhook_type_combo = themed_dropdown(
+                    row, options=_WEBHOOK_TYPE_OPTIONS,
+                    value="generic", state="readonly", width=15,
+                    command=self._on_webhook_type_selected,
                 )
                 self._webhook_type_combo.pack(side=tk.LEFT)
-                self._webhook_type_combo.bind("<<ComboboxSelected>>", self._on_webhook_type_selected)
             elif widget == "spinbox":
                 themed_spinbox(
                     row, from_=1, to=30, textvariable=var, width=5,
@@ -258,9 +263,6 @@ class NotificationPage(BasePage):
         frame.pack(fill=tk.BOTH, expand=True, padx=th.pad_md, pady=th.pad_md)
 
         trigger_internal = rule["trigger"]
-        var_trigger = tk.StringVar(
-            value=next((t(i18n) for v, i18n in _TRIGGER_OPTIONS if v == trigger_internal), trigger_internal),
-        )
         var_title = tk.StringVar(value=rule["title_template"])
         var_message = tk.StringVar(value=rule["message_template"])
         var_cooldown = tk.DoubleVar(value=rule["cooldown"])
@@ -273,21 +275,15 @@ class NotificationPage(BasePage):
         themed_label(
             frame, text=t("notification.rule.trigger"),
         ).grid(row=r, column=0, sticky=tk.W, pady=th.pad_xs)
-        trigger_combo = ttk.Combobox(
-            frame, textvariable=var_trigger, state="readonly",
-            values=[t(i18n) for _, i18n in _TRIGGER_OPTIONS], width=15,
+        trigger_dropdown = themed_dropdown(
+            frame, options=_TRIGGER_OPTIONS,
+            value=trigger_internal, state="readonly", width=15,
+            command=lambda v: setattr(_trigger_holder, "value", v),
         )
-        trigger_combo.grid(row=r, column=1, sticky=tk.W, padx=th.pad_xs, pady=th.pad_xs)
+        trigger_dropdown.grid(row=r, column=1, sticky=tk.W, padx=th.pad_xs, pady=th.pad_xs)
 
-        def _on_trigger_selected(_event=None):
-            nonlocal trigger_internal
-            display = var_trigger.get()
-            for val, i18n_key in _TRIGGER_OPTIONS:
-                if t(i18n_key) == display:
-                    trigger_internal = val
-                    break
-
-        trigger_combo.bind("<<ComboboxSelected>>", _on_trigger_selected)
+        from types import SimpleNamespace
+        _trigger_holder = SimpleNamespace(value=trigger_internal)
         r += 1
 
         themed_label(
@@ -331,7 +327,7 @@ class NotificationPage(BasePage):
         def _save():
             selected_channels = [n for n, v in channel_vars.items() if v.get()]
             self._rule_rows[idx] = {
-                "trigger": trigger_internal,
+                "trigger": _trigger_holder.value,
                 "channels": selected_channels,
                 "title_template": var_title.get(),
                 "message_template": var_message.get(),
@@ -370,8 +366,10 @@ class NotificationPage(BasePage):
         self._var_sound.set(nc.channels.sound.enabled)
         self._var_webhook_enabled.set(nc.channels.webhook.enabled)
         self._var_webhook_url.set(nc.channels.webhook.url)
-        self._var_webhook_type.set(t(f"notification.webhook.type.{nc.channels.webhook.channel_type}"))
+        self._var_webhook_type.set(nc.channels.webhook.channel_type)
         self._webhook_type_internal = nc.channels.webhook.channel_type
+        if hasattr(self, "_webhook_type_combo") and self._webhook_type_combo:
+            self._webhook_type_combo.set_value(nc.channels.webhook.channel_type)
         self._var_webhook_secret.set(nc.channels.webhook.secret)
         self._var_webhook_timeout.set(nc.channels.webhook.timeout)
 
@@ -406,12 +404,8 @@ class NotificationPage(BasePage):
         ]
         save_config(cfg)
 
-    def _on_webhook_type_selected(self, _event=None) -> None:
-        display = self._var_webhook_type.get()
-        for val in _WEBHOOK_TYPE_VALUES:
-            if t(f"notification.webhook.type.{val}") == display:
-                self._webhook_type_internal = val
-                break
+    def _on_webhook_type_selected(self, val: str) -> None:
+        self._webhook_type_internal = val
 
     # ── Webhook 测试 ─────────────────────────────────────
 

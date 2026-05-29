@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.panel.canvas.theme import CanvasTheme, current_theme
+from src.panel.canvas.theme.style_mappings import derive_hover_bg as _derive_hover_bg
 from src.panel.qt_backend.scale import qt_scale_manager
 
 
@@ -36,6 +37,30 @@ def theme_to_qss(t: CanvasTheme) -> str:
         background-color: {t.btn_disabled_bg};
         color: {t.btn_disabled_fg};
     }}
+    QPushButton[dnaBtnStyle="primary"] {{
+        background-color: {t.accent_blue};
+        color: {t.text_on_accent};
+        border: 1px solid {t.accent_blue};
+    }}
+    QPushButton[dnaBtnStyle="primary"]:hover {{
+        background-color: {_derive_hover_bg(t.accent_blue)};
+    }}
+    QPushButton[dnaBtnStyle="danger"] {{
+        background-color: {t.danger_color};
+        color: {t.text_on_accent};
+        border: 1px solid {t.danger_color};
+    }}
+    QPushButton[dnaBtnStyle="danger"]:hover {{
+        background-color: {_derive_hover_bg(t.danger_color)};
+    }}
+    QPushButton[dnaBtnStyle="ghost"] {{
+        background-color: {t.page_bg};
+        color: {t.text_primary};
+        border: 1px solid transparent;
+    }}
+    QPushButton[dnaBtnStyle="ghost"]:hover {{
+        background-color: {t.bg_surface_hover};
+    }}
 
     /* ── 标签 ── */
     QLabel {{
@@ -51,6 +76,8 @@ def theme_to_qss(t: CanvasTheme) -> str:
         border-radius: 4px;
         padding: {t.pad_xs}px {t.pad_sm}px;
         min-height: {t.button_height - 8}px;
+        selection-background-color: {t.accent_blue};
+        selection-color: {t.text_on_accent};
     }}
     QLineEdit:focus {{
         border-color: {t.accent_blue};
@@ -81,6 +108,7 @@ def theme_to_qss(t: CanvasTheme) -> str:
         border-radius: 4px;
         padding: {t.pad_xs}px {t.pad_sm}px;
         min-height: {t.button_height - 8}px;
+        padding-right: {qt_scale_manager().s(24)}px;
     }}
     QComboBox:focus {{
         border-color: {t.accent_blue};
@@ -88,13 +116,27 @@ def theme_to_qss(t: CanvasTheme) -> str:
     QComboBox::drop-down {{
         subcontrol-origin: padding;
         subcontrol-position: center right;
-        width: {qt_scale_manager().s(20)}px;
+        width: {qt_scale_manager().s(24)}px;
         border: none;
+        border-left: 1px solid {t.border_default};
+        background-color: {t.input_bg};
+    }}
+    QComboBox::drop-down:hover {{
+        background-color: {t.bg_surface_hover};
     }}
     QComboBox::down-arrow {{
-        width: 10px;
-        height: 10px;
-        border: none;
+        width: 0;
+        height: 0;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 6px solid {t.text_primary};
+    }}
+    QComboBox:disabled {{
+        background-color: {t.btn_disabled_bg};
+        color: {t.btn_disabled_fg};
+    }}
+    QComboBox:disabled::down-arrow {{
+        border-top-color: {t.btn_disabled_fg};
     }}
     QComboBox QAbstractItemView {{
         background-color: {t.card_bg};
@@ -102,6 +144,15 @@ def theme_to_qss(t: CanvasTheme) -> str:
         selection-background-color: {t.accent_blue};
         selection-color: {t.text_on_accent};
         border: 1px solid {t.border_default};
+        outline: none;
+        padding: {t.pad_xs}px;
+    }}
+    QComboBox QAbstractItemView::item {{
+        padding: {t.pad_xs}px {t.pad_sm}px;
+        min-height: {t.button_height - 8}px;
+    }}
+    QComboBox QAbstractItemView::item:hover {{
+        background-color: {t.bg_surface_hover};
     }}
 
     /* ── 复选框 ── */

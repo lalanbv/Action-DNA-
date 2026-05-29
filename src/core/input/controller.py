@@ -160,6 +160,16 @@ class InputController(BezierMixin, PathReplayMixin):
     def key_up(self, key: str) -> None:
         self._backend.key_up(key)
 
+    # ── 公共鼠标按钮 API ──────────────────────────────────────────
+
+    def mouse_down(self, x: int, y: int, button: str) -> int | None:
+        return self._backend.mouse_down(x, y, button)
+
+    def mouse_up(
+        self, x: int, y: int, button: str, click_num: int | None = None,
+    ) -> None:
+        self._backend.mouse_up(x, y, button, click_num)
+
     # ── 移动 ──────────────────────────────────────────────────────
 
     def _fitts_duration(self, distance: float) -> float:

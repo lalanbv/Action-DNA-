@@ -16,6 +16,10 @@ from src.panel.widgets import (
 from src.panel.components.palette_data import (
     ACTION_PALETTE as _ACTION_PALETTE,
     FLOW_PALETTE as _FLOW_PALETTE,
+    HELP_ACTION_ITEMS,
+    HELP_FLOW_ITEMS,
+    action_accent,
+    flow_accent,
 )
 from src.utils.i18n import t
 
@@ -44,7 +48,21 @@ class WorkflowPaletteMixin:
         self._palette_btn_widgets: list[LabelButton] = []
         self._palette_labels: list[tk.Label] = []
 
-        self._notebook = ttk.Notebook(self._palette_outer)
+        # Notebook tab 样式：紧凑布局，确保标签文字不被截断
+        style = ttk.Style()
+        style.configure(
+            "Palette.TNotebook.Tab",
+            padding=[sm.s(8), sm.s(2)],
+            font=(theme.font_family, sm.s(9)),
+        )
+        style.configure(
+            "Palette.TNotebook",
+            tabmargins=[sm.s(2), sm.s(0), sm.s(2), sm.s(0)],
+        )
+
+        self._notebook = ttk.Notebook(
+            self._palette_outer, style="Palette.TNotebook",
+        )
         self._notebook.pack(fill=tk.BOTH, expand=True)
 
         self._build_nodes_tab(theme, sm)
@@ -82,35 +100,43 @@ class WorkflowPaletteMixin:
         )
         self._palette_inner = tk.Frame(self._palette_canvas, bg=theme.panel_bg)
 
-        self._palette_inner.bind("<Configure>", self._on_palette_configure)
         self._palette_win_id = self._palette_canvas.create_window(
             (0, 0), window=self._palette_inner, anchor=tk.NW,
         )
         self._palette_canvas.configure(yscrollcommand=self._palette_scrollbar.set)
 
+        # 内容变化 或 canvas 自身尺寸变化 时更新 scrollregion
+        self._palette_inner.bind("<Configure>", self._on_palette_configure)
+        self._palette_canvas.bind("<Configure>", self._on_canvas_resize)
+
         self._palette_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self._palette_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # 鼠标滚轮：在 canvas 及其所有子组件上绑定
         self._palette_canvas.bind("<Enter>", self._palette_bind_wheel)
         self._palette_canvas.bind("<Leave>", self._palette_unbind_wheel)
-        self._palette_inner.bind("<Enter>", self._palette_bind_wheel)
+
+        # Notebook 标签页切换时强制刷新（首次显示时 canvas 可能宽高为 0）
+        self._notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
 
         self._build_action_section(sm)
         self._build_flow_section(sm)
         self._update_section_counts()
 
     def _build_action_section(self, sm):
+        theme = current_theme()
         row_idx = 0
         body_action = self._build_collapsible_section(
             self._palette_inner, t("workflow.palette.section_action"), "action",
         )
         for action_type, i18n_key in _ACTION_PALETTE:
-            color = node_fill_color("ACTION")
+            accent_token = action_accent(action_type)
+            color = getattr(theme, accent_token, theme.accent_blue)
             row, btn = self._make_palette_button(
                 body_action, f"+ {t(i18n_key)}", color,
                 lambda at=action_type: self._on_add_action_node(at),
             )
-            row.grid(row=row_idx, column=0, sticky="ew", padx=2, pady=1)
+            row.grid(row=row_idx, column=0, sticky="ew", padx=sm.s(4), pady=sm.s(1))
             row._palette_text = t(i18n_key)
             row._palette_section_key = "action"
             self._palette_buttons.append(row)
@@ -120,17 +146,19 @@ class WorkflowPaletteMixin:
     def _build_flow_section(self, sm):
         from src.core.flow import NodeType
 
+        theme = current_theme()
         row_idx = 0
         body_flow = self._build_collapsible_section(
             self._palette_inner, t("workflow.palette.section_flow"), "flow",
         )
         for node_type, i18n_key in _FLOW_PALETTE:
-            color = node_fill_color(node_type)
+            accent_token = flow_accent(node_type)
+            color = getattr(theme, accent_token, theme.accent_blue)
             row, btn = self._make_palette_button(
                 body_flow, t(i18n_key), color,
                 lambda nt=node_type: self._on_add_node(nt),
             )
-            row.grid(row=row_idx, column=0, sticky="ew", padx=2, pady=1)
+            row.grid(row=row_idx, column=0, sticky="ew", padx=sm.s(4), pady=sm.s(1))
             row._palette_text = t(i18n_key)
             row._palette_section_key = "flow"
             self._palette_buttons.append(row)
@@ -141,12 +169,13 @@ class WorkflowPaletteMixin:
             (NodeType.START, "workflow.palette.start"),
             (NodeType.END, "workflow.palette.end"),
         ]:
-            color = node_fill_color(node_type)
+            accent_token = flow_accent(node_type)
+            color = getattr(theme, accent_token, theme.accent_blue)
             row, btn = self._make_palette_button(
                 body_flow, t(i18n_key), color,
                 lambda nt=node_type: self._on_add_node(nt),
             )
-            row.grid(row=row_idx, column=0, sticky="ew", padx=2, pady=1)
+            row.grid(row=row_idx, column=0, sticky="ew", padx=sm.s(4), pady=sm.s(1))
             row._palette_text = t(i18n_key)
             row._palette_section_key = "flow"
             self._palette_buttons.append(row)
@@ -216,91 +245,66 @@ class WorkflowPaletteMixin:
         )
         win_id = help_canvas.create_window((0, 0), window=help_inner, anchor=tk.NW)
         help_canvas.configure(yscrollcommand=help_scrollbar.set)
-        help_canvas.bind(
-            "<Configure>",
-            lambda _: help_canvas.itemconfigure(win_id, width=help_canvas.winfo_width()),
-        )
+
+        def _on_help_canvas_configure(_):
+            w = help_canvas.winfo_width()
+            help_canvas.itemconfigure(win_id, width=w)
+            for lbl in help_inner.winfo_children():
+                if isinstance(lbl, tk.Label):
+                    lbl.configure(wraplength=max(w - sm.s(16), sm.s(60)))
+
+        help_canvas.bind("<Configure>", _on_help_canvas_configure)
         help_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         help_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         px = sm.s(6)
-        py = sm.s(4)
+        py = sm.s(3)
 
-        self._build_help_action_section(help_inner, theme, sm, px, py)
+        self._build_help_card(help_inner, theme, sm, px, py,
+                              title_key="workflow.help.action.title",
+                              title_color=theme.accent_blue,
+                              items=HELP_ACTION_ITEMS)
         themed_separator(help_inner).pack(fill=tk.X, padx=px, pady=py)
-        self._build_help_flow_section(help_inner, theme, sm, px, py)
+        self._build_help_card(help_inner, theme, sm, px, py,
+                              title_key="workflow.help.flow.title",
+                              title_color=theme.accent_orange,
+                              items=HELP_FLOW_ITEMS)
         themed_separator(help_inner).pack(fill=tk.X, padx=px, pady=py)
 
-        tk.Label(
+        hint = tk.Label(
             help_inner, text=t("workflow.help.hint"),
             bg=theme.panel_bg, fg=theme.text_muted,
-            font=(theme.font_family, sm.s(8)), wraplength=sm.s(160),
+            font=(theme.font_family, sm.s(8)), wraplength=sm.s(180),
             justify=tk.LEFT,
-        ).pack(anchor=tk.W, padx=px, pady=(py, sm.s(8)))
+        )
+        hint.pack(anchor=tk.W, padx=px, pady=(py, sm.s(8)))
 
-    def _build_help_action_section(self, parent, theme, sm, px, py):
+    def _build_help_card(self, parent, theme, sm, px, py, *,
+                         title_key: str, title_color: str,
+                         items: list[tuple[str, str]]) -> None:
+        card = tk.Frame(
+            parent, bg=theme.card_bg,
+            highlightbackground=theme.border_default,
+            highlightthickness=1,
+        )
+        card.pack(fill=tk.X, padx=px, pady=(py, 0))
+
         tk.Label(
-            parent, text=t("workflow.help.action.title"),
-            bg=theme.panel_bg, fg=theme.accent_blue,
+            card, text=t(title_key),
+            bg=theme.card_bg, fg=title_color,
             font=(theme.font_family, sm.s(9), "bold"),
-        ).pack(anchor=tk.W, padx=px, pady=(py, 2))
+            anchor=tk.W,
+        ).pack(fill=tk.X, padx=sm.s(6), pady=(sm.s(4), sm.s(2)))
 
-        help_action_items = [
-            ("action_type.click_image", "workflow.help.click_image"),
-            ("action_type.wait", "workflow.help.wait"),
-            ("action_type.wait_random", "workflow.help.wait_random"),
-            ("action_type.press_key", "workflow.help.press_key"),
-            ("action_type.click_pos", "workflow.help.click_pos"),
-            ("action_type.scroll", "workflow.help.mouse_scroll"),
-            ("action_type.hold_key", "workflow.help.hold_key"),
-            ("action_type.mouse_move", "workflow.help.mouse_move"),
-            ("action_type.mouse_drag", "workflow.help.mouse_drag"),
-            ("action_type.key_combo", "workflow.help.key_combo"),
-            ("action_type.multi_key", "workflow.help.multi_key_sequence"),
-            ("action_type.idle", "workflow.help.idle_behavior"),
-            ("action_type.start_timer", "workflow.help.start_timer"),
-        ]
-        for name_key, desc_key in help_action_items:
-            frame = tk.Frame(parent, bg=theme.panel_bg)
-            frame.pack(fill=tk.X, padx=px, pady=1)
+        for name_key, desc_key in items:
+            row = tk.Frame(card, bg=theme.card_bg)
+            row.pack(fill=tk.X, padx=sm.s(6), pady=1)
             tk.Label(
-                frame, text=t(name_key), bg=theme.panel_bg,
-                fg=theme.text_primary, font=(theme.font_family, sm.s(8), "bold"),
-                width=8, anchor=tk.NW,
-            ).pack(side=tk.LEFT, padx=(0, sm.s(4)))
-            tk.Label(
-                frame, text=t(desc_key), bg=theme.panel_bg,
-                fg=theme.text_muted, font=(theme.font_family, sm.s(8)),
-                wraplength=sm.s(140), anchor=tk.NW, justify=tk.LEFT,
-            ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-    def _build_help_flow_section(self, parent, theme, sm, px, py):
-        tk.Label(
-            parent, text=t("workflow.help.flow.title"),
-            bg=theme.panel_bg, fg=theme.accent_orange,
-            font=(theme.font_family, sm.s(9), "bold"),
-        ).pack(anchor=tk.W, padx=px, pady=(py, 2))
-
-        help_flow_items = [
-            ("workflow.node.start", "workflow.help.start"),
-            ("workflow.node.end", "workflow.help.end"),
-            ("workflow.node.condition", "workflow.help.condition"),
-            ("workflow.node.merge", "workflow.help.merge"),
-            ("workflow.node.loop", "workflow.help.loop"),
-        ]
-        for name_key, desc_key in help_flow_items:
-            frame = tk.Frame(parent, bg=theme.panel_bg)
-            frame.pack(fill=tk.X, padx=px, pady=1)
-            tk.Label(
-                frame, text=t(name_key), bg=theme.panel_bg,
-                fg=theme.text_primary, font=(theme.font_family, sm.s(8), "bold"),
-                width=8, anchor=tk.NW,
-            ).pack(side=tk.LEFT, padx=(0, sm.s(4)))
-            tk.Label(
-                frame, text=t(desc_key), bg=theme.panel_bg,
-                fg=theme.text_muted, font=(theme.font_family, sm.s(8)),
-                wraplength=sm.s(140), anchor=tk.NW, justify=tk.LEFT,
-            ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+                row, text=f"{t(name_key)}: {t(desc_key)}",
+                bg=theme.card_bg, fg=theme.text_secondary,
+                font=(theme.font_family, sm.s(8)),
+                wraplength=sm.s(180), anchor=tk.W, justify=tk.LEFT,
+            ).pack(fill=tk.X)
 
     # ── 可折叠分组 ──────────────────────────────────────────
 
@@ -331,6 +335,7 @@ class WorkflowPaletteMixin:
 
         body = tk.Frame(parent, bg=theme.panel_bg)
         body.pack(fill=tk.X)
+        body.columnconfigure(0, weight=1)
 
         self._section_arrows[key] = arrow
         self._section_bodies[key] = body
@@ -358,6 +363,8 @@ class WorkflowPaletteMixin:
             self._section_bodies[key].pack(fill=tk.X, after=self._section_headers[key])
             self._section_arrows[key].configure(text="▼")
             self._section_expanded[key] = True
+        if hasattr(self, "_palette_canvas"):
+            self.frame.after(30, self._force_palette_refresh)
 
     def _on_section_hover(self, header, arrow, count_label, entering):
         theme = current_theme()
@@ -455,25 +462,43 @@ class WorkflowPaletteMixin:
 
     # ── 滚动辅助 ──────────────────────────────────────────
 
-    def _force_palette_refresh(self):
-        if not self._palette_canvas.winfo_exists():
-            return
-        self._palette_inner.update_idletasks()
-        self._palette_canvas.configure(scrollregion=self._palette_canvas.bbox("all"))
-        self._palette_canvas.itemconfigure(
-            self._palette_win_id, width=self._palette_canvas.winfo_width(),
-        )
+    def _on_notebook_tab_changed(self, _event=None):
+        """标签页切换后延迟刷新，确保 canvas 已获得正确尺寸。"""
+        if hasattr(self, "_palette_canvas") and self._palette_canvas.winfo_exists():
+            self.frame.after(50, self._force_palette_refresh)
 
-    def _on_palette_configure(self, event):
+    def _on_canvas_resize(self, _event=None):
+        """Canvas 自身尺寸变化时，同步 inner 宽度和 scrollregion。"""
+        if not hasattr(self, "_palette_canvas") or not self._palette_canvas.winfo_exists():
+            return
         cw = self._palette_canvas.winfo_width()
         if cw < 2:
             return
-        self._palette_canvas.configure(scrollregion=self._palette_canvas.bbox("all"))
         self._palette_canvas.itemconfigure(self._palette_win_id, width=cw)
+        bbox = self._palette_canvas.bbox("all")
+        if bbox:
+            self._palette_canvas.configure(scrollregion=bbox)
+
+    def _force_palette_refresh(self):
+        if not hasattr(self, "_palette_canvas") or not self._palette_canvas.winfo_exists():
+            return
+        self._palette_inner.update_idletasks()
+        cw = self._palette_canvas.winfo_width()
+        if cw < 2:
+            # canvas 还没有正确尺寸，延迟重试
+            self.frame.after(100, self._force_palette_refresh)
+            return
+        self._palette_canvas.itemconfigure(self._palette_win_id, width=cw)
+        bbox = self._palette_canvas.bbox("all")
+        if bbox:
+            self._palette_canvas.configure(scrollregion=bbox)
+
+    def _on_palette_configure(self, event):
+        self._on_canvas_resize()
 
     def _on_palette_mousewheel(self, event):
         if IS_MACOS:
-            self._palette_canvas.yview_scroll(-event.delta, "units")
+            self._palette_canvas.yview_scroll(int(-event.delta), "units")
         elif IS_LINUX:
             if event.num == 4:
                 self._palette_canvas.yview_scroll(-1, "units")

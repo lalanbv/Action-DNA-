@@ -41,6 +41,8 @@ def build_light_theme(family: str, mono: str, sf) -> CanvasTheme:
         port_in_fill="#1e1e1e",
         port_in_outline="#0078d4",
         port_out_outline="#c0c0c0",
+        port_in_glow="#0078d4",
+        port_out_glow="#3c3c3c",
         shadow_color="#d0d0d0",
         grid_dot="#e0e0e0",
         grid_dot_sub="#ebebeb",

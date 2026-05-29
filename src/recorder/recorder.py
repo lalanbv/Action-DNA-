@@ -68,7 +68,7 @@ class MacroRecorder:
         events = recorder.stop()
     """
 
-    _DEDUP_DISTANCE_THRESHOLD: float = 3.0
+    _DEDUP_DISTANCE_THRESHOLD_SQ: float = 1.0  # 1.0px² → 距离 < 1px 视为抖动
 
     def __init__(self, region: tuple[int, int, int, int] | None = None) -> None:
         self._events: deque[RecordedEvent] = deque()
@@ -84,6 +84,11 @@ class MacroRecorder:
         self._last_mouse_move_pos: tuple[int, int] | None = None
 
     # ---- 公开接口 ----
+
+    def _set_recording(self, value: bool) -> None:
+        """线程安全地设置 _is_recording 标志。"""
+        with self._lock:
+            self._is_recording = value
 
     def start(self) -> None:
         """开始录制（清空之前的事件，启动捕获线程）。"""
@@ -171,6 +176,8 @@ class MacroRecorder:
         delta_time: float,
         flags: int = 0,
     ) -> None:
+        if not self._is_recording:
+            return
         with self._lock:
             if not self._is_recording:
                 return
@@ -179,13 +186,10 @@ class MacroRecorder:
             if event_type == "mouse_move":
                 if self._last_mouse_move_pos is not None:
                     lx, ly = self._last_mouse_move_pos
-                    if math.hypot(x - lx, y - ly) < self._DEDUP_DISTANCE_THRESHOLD:
+                    dx, dy = x - lx, y - ly
+                    if dx * dx + dy * dy < self._DEDUP_DISTANCE_THRESHOLD_SQ:
                         return
 
-            logger.debug(
-                "鼠标事件: type=%s pos=(%d,%d) btn=%s dt=%.3f",
-                event_type, x, y, button, delta_time,
-            )
             self._events.append(RecordedEvent(
                 event_type=event_type,
                 x=x,
@@ -208,10 +212,11 @@ class MacroRecorder:
         flags: int = 0,
         is_repeat: bool = False,
     ) -> None:
+        if not self._is_recording:
+            return
         with self._lock:
             if not self._is_recording:
                 return
-
             self._events.append(RecordedEvent(
                 event_type=event_type,
                 key=key,
@@ -232,14 +237,12 @@ class MacroRecorder:
         flags: int = 0,
         delta_x: int = 0,
     ) -> None:
+        if not self._is_recording:
+            return
         with self._lock:
             if not self._is_recording:
                 return
 
-            logger.debug(
-                "滚轮事件: pos=(%d,%d) delta=%d dx=%d dt=%.3f",
-                x, y, delta, delta_x, delta_time,
-            )
             self._events.append(RecordedEvent(
                 event_type="mouse_scroll",
                 x=x,
@@ -250,7 +253,7 @@ class MacroRecorder:
                 delta_time=delta_time,
                 flags=flags,
             ))
-        self._last_event_time = timestamp
+            self._last_event_time = timestamp
 
     # ---- 平台捕获循环 ----
 
@@ -261,7 +264,7 @@ class MacroRecorder:
             self._capture_loop_windows()
         else:
             logger.error("不支持的平台: Linux")
-            self._is_recording = False
+            self._set_recording(False)
 
     def _capture_loop_macos(self) -> None:
         """macOS: Quartz CGEventTap 监听系统级输入事件。"""
@@ -313,7 +316,7 @@ class MacroRecorder:
                 "macOS 需要 pyobjc-framework-Quartz 库。"
                 "安装命令: pip install pyobjc-framework-Quartz"
             )
-            self._is_recording = False
+            self._set_recording(False)
             return
 
         MOUSE_EVENT_MAP: dict[int, tuple[str, str]] = {
@@ -453,6 +456,12 @@ class MacroRecorder:
                 keycode = CGEventGetIntegerValueField(
                     event, kCGKeyboardEventKeycode,
                 )
+
+                # 修饰键由 kCGEventFlagsChanged 统一处理，跳过以避免重复事件
+                if keycode in _MODIFIER_KEYCODES:
+                    last_flags[0] = current_flags
+                    return event
+
                 key_name = KEYCODE_MAP.get(keycode, f"key_{keycode}")
 
                 is_repeat = bool(CGEventGetIntegerValueField(
@@ -463,10 +472,6 @@ class MacroRecorder:
                     etype, key_name, now, delta,
                     flags=current_flags, is_repeat=is_repeat,
                 )
-
-                if keycode in _MODIFIER_KEYCODES:
-                    mod_name = _MODIFIER_KEYCODES[keycode]
-                    modifier_state[mod_name] = (etype == "key_down")
 
                 last_flags[0] = current_flags
 
@@ -550,7 +555,7 @@ class MacroRecorder:
 
         if tap_ref[0] is None:
             logger.error("无法创建 CGEventTap — 请检查辅助功能权限")
-            self._is_recording = False
+            self._set_recording(False)
             return
 
         source = CFMachPortCreateRunLoopSource(None, tap_ref[0], 0)
@@ -572,7 +577,7 @@ class MacroRecorder:
                 "Windows 宏录制需要 pynput 库。"
                 "安装命令: pip install pynput"
             )
-            self._is_recording = False
+            self._set_recording(False)
             return
 
         listeners: list[object] = []
@@ -664,5 +669,5 @@ class MacroRecorder:
                     l.stop()
                 except Exception:
                     pass
-            self._is_recording = False
+            self._set_recording(False)
             logger.info("Windows pynput 监听已停止")

@@ -45,7 +45,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
         super().__init__(parent)
 
         self._scene = QGraphicsScene(self)
-        self._scene.setSceneRect(-50000, -50000, 100000, 100000)
+        self._scene.setSceneRect(-5000, -5000, 10000, 10000)
         self.setScene(self._scene)
 
         self.setRenderHints(
@@ -84,6 +84,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
 
         self._graph_version: int = 0
         self._last_rendered_version: int = -1
+        self._destroyed = False
 
         self._init_theme_guard(self._on_theme_changed, RuntimeError)
 
@@ -125,6 +126,12 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
             self._floating_controls.show()
         if not self._minimap:
             self._minimap = QtMinimap(self, self)
+            # 连接拖拽手柄和齿轮按钮事件
+            mm = self._minimap
+            mm._drag_handle.mousePressEvent = mm.handle_mouse_press
+            mm._drag_handle.mouseMoveEvent = mm.handle_mouse_move
+            mm._drag_handle.mouseReleaseEvent = mm.handle_mouse_release
+            mm._gear_btn.mousePressEvent = lambda e: mm._toggle_settings()
             self._minimap.show()
         self._reposition_overlays()
 
@@ -133,7 +140,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
         if self._floating_controls:
             self._floating_controls.reposition(w, h)
         if self._minimap:
-            self._minimap.move(w - self._minimap.width() - 10, 10)
+            self._minimap.reposition_on_resize(w, h)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -155,6 +162,12 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
 
     def clear_graph(self) -> None:
         self._stop_edge_animation()
+        if self._minimap:
+            self._minimap.setVisible(False)
+        if self._temp_edge:
+            self._temp_edge.prepareGeometryChange()
+            self._scene.removeItem(self._temp_edge)
+            self._temp_edge = None
         self._scene.clear()
         self._node_items.clear()
         self._edge_items.clear()
@@ -188,11 +201,13 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
         for nid in removed_nodes:
             item = self._node_items.pop(nid, None)
             if item:
+                item.prepareGeometryChange()
                 self._scene.removeItem(item)
 
         for eid in removed_edges:
             item = self._edge_items.pop(eid, None)
             if item:
+                item.prepareGeometryChange()
                 self._scene.removeItem(item)
 
         if graph.nodes:
@@ -224,6 +239,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
     def _remove_node_visual(self, node_id: str) -> None:
         item = self._node_items.pop(node_id, None)
         if item:
+            item.prepareGeometryChange()
             self._scene.removeItem(item)
 
     def _add_edge_visual(self, edge: FlowEdge) -> None:
@@ -243,6 +259,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
     def _remove_edge_visual(self, edge_id: str) -> None:
         item = self._edge_items.pop(edge_id, None)
         if item:
+            item.prepareGeometryChange()
             self._scene.removeItem(item)
 
     # ── 公共增量视觉操作 ──────────────────────────────────────
@@ -561,6 +578,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
     # ── Cleanup ────────────────────────────────────────────
 
     def destroy_canvas(self) -> None:
+        self._destroyed = True
         self._unregister_theme_callback()
         self._stop_edge_animation()
         self.clear_graph()
@@ -592,6 +610,7 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
 
     def _clear_temp_edge(self) -> None:
         if self._temp_edge:
+            self._temp_edge.prepareGeometryChange()
             self._scene.removeItem(self._temp_edge)
             self._temp_edge = None
 
@@ -623,20 +642,25 @@ class QtGraphCanvas(ThemeCallbackMixin, QGraphicsView):
             self._edge_animator_timer = None
 
     def _tick_edge_animation(self) -> None:
-        if not self._edge_items:
+        if self._destroyed or not self._edge_items:
             return
-        if self._highlighted_node_id and self._graph:
-            active_edges = self._graph.get_edges_for_node(self._highlighted_node_id)
-            active_ids = {e.edge_id for e in active_edges}
-            for eid, item in self._edge_items.items():
-                is_active = eid in active_ids
-                item.set_animating(is_active)
-                if is_active:
-                    item.advance_animation()
-        else:
-            for item in self._edge_items.values():
-                item.set_animating(False)
-        self._scene.update()
+        try:
+            if self._highlighted_node_id and self._graph:
+                active_edges = self._graph.get_edges_for_node(self._highlighted_node_id)
+                active_ids = {e.edge_id for e in active_edges}
+                for eid, item in list(self._edge_items.items()):
+                    if eid not in self._edge_items:
+                        continue
+                    is_active = eid in active_ids
+                    item.set_animating(is_active)
+                    if is_active:
+                        item.advance_animation()
+            else:
+                for item in list(self._edge_items.values()):
+                    item.set_animating(False)
+            self._scene.update()
+        except RuntimeError:
+            self._stop_edge_animation()
 
     # ── Qt event overrides (forward to interaction handler) ─
 

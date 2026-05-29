@@ -2,13 +2,14 @@
 
 选中步骤时显示：类型标签、描述、启用开关、备注。
 操作按钮：上移/下移/编辑（打开对话框）/删除。
-底部：循环设置（无限循环 checkbox + 循环次数 spinbox）。
+属性区域超出时自动显示滚动条。
 """
 
 import tkinter as tk
 from typing import Callable
 
 from src.core.step_types import BaseStep
+from src.panel.canvas.scale import ScrollableFrame
 from src.panel.canvas.theme import current_theme, CanvasTheme
 from src.panel.widgets import (
     themed_button,
@@ -16,13 +17,12 @@ from src.panel.widgets import (
     themed_frame,
     themed_label,
     themed_separator,
-    themed_spinbox,
 )
 from src.utils.i18n import t
 
 
 class StepPropertyPanel(tk.Frame):
-    """动作链步骤属性面板，包含属性显示区 + 循环设置区。"""
+    """动作链步骤属性面板，包含属性显示区。"""
 
     def __init__(
         self,
@@ -32,21 +32,21 @@ class StepPropertyPanel(tk.Frame):
         on_edit: Callable,
         on_delete: Callable,
         on_enabled_change: Callable | None = None,
-        width: int = 220,
+        width: int | None = None,
     ) -> None:
         th = current_theme()
-        super().__init__(parent, bg=th.panel_bg, width=width)
-        self.pack_propagate(False)
+        super().__init__(parent, bg=th.panel_bg)
+        self.pack(fill=tk.BOTH, expand=True)
         self._on_move_up = on_move_up
         self._on_move_down = on_move_down
         self._on_edit = on_edit
         self._on_delete = on_delete
         self._on_enabled_change = on_enabled_change
         self._current_step: BaseStep | None = None
+        self._scroll: ScrollableFrame | None = None
         self._build(th)
 
     def _build(self, th: CanvasTheme) -> None:
-        # ── 属性区域（上半）──
         self._prop_header = themed_frame(self)
         self._prop_header.pack(fill=tk.X, padx=th.pad_sm, pady=(th.pad_sm, 0))
         themed_label(
@@ -56,38 +56,15 @@ class StepPropertyPanel(tk.Frame):
 
         themed_separator(self).pack(fill=tk.X, padx=th.pad_sm, pady=th.pad_xs)
 
-        self._prop_area = themed_frame(self)
-        self._prop_area.pack(fill=tk.BOTH, expand=True)
+        self._scroll = ScrollableFrame(self, bg=th.panel_bg)
+        self._scroll.pack(fill=tk.BOTH, expand=True)
+        self._prop_area = self._scroll.inner
 
         themed_label(
             self._prop_area,
             text=t("workflow.properties.empty"),
             style="body", bg=th.panel_bg, fg=th.text_muted,
         ).pack(pady=th.pad_xl)
-
-        # ── 循环设置区域（底部固定）──
-        themed_separator(self).pack(fill=tk.X, padx=th.pad_sm, pady=th.pad_xs)
-
-        loop_frame = themed_frame(self)
-        loop_frame.pack(fill=tk.X, padx=th.pad_sm, pady=(0, th.pad_sm))
-        themed_label(
-            loop_frame, text=t("chain.loop_label"), style="body", bg=th.panel_bg,
-        ).pack(anchor="w")
-
-        self.var_loop = tk.BooleanVar(value=True)
-        themed_checkbutton(
-            loop_frame, text=t("common.infinite_loop"), variable=self.var_loop,
-        ).pack(anchor="w", padx=th.pad_xs)
-
-        count_row = themed_frame(loop_frame)
-        count_row.pack(fill=tk.X, padx=th.pad_xs)
-        themed_label(
-            count_row, text=t("common.loop_count_label"), style="small", bg=th.panel_bg,
-        ).pack(side=tk.LEFT)
-        self.var_loop_count = tk.IntVar(value=0)
-        themed_spinbox(count_row, from_=0, to=9999, textvariable=self.var_loop_count, width=6).pack(
-            side=tk.LEFT, padx=th.pad_xs,
-        )
 
     def show_step(self, step: BaseStep, index: int, total: int) -> None:
         """显示选中步骤的属性。"""
@@ -179,4 +156,7 @@ class StepPropertyPanel(tk.Frame):
         th = current_theme()
         self.configure(bg=th.panel_bg)
         self._prop_header.configure(bg=th.panel_bg)
-        self._prop_area.configure(bg=th.panel_bg)
+        if self._scroll is not None:
+            self._scroll.set_bg(th.panel_bg)
+        from src.panel.widgets import cascade_theme
+        cascade_theme(self)

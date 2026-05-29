@@ -47,8 +47,9 @@ NODE_SPECS: dict[NodeType, tuple[float, float, float, float, float]] = {
 
 # ── 端口 / 视觉常量 ─────────────────────────────────────
 
-PORT_RADIUS = 10
-PORT_DOT_SCALE = 0.5
+PORT_RADIUS = 10          # 命中检测半径
+PORT_VISUAL_RADIUS = 7    # 实际可见半径（菱形半轴/圆形半径）
+PORT_DOT_SCALE = 0.5      # (legacy, Qt minimal LOD 使用)
 PORT_LABEL_OFFSET = 0.7
 PORT_LABEL_WIDTH = 60
 PORT_LABEL_HEIGHT = 12

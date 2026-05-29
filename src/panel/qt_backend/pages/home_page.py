@@ -536,5 +536,6 @@ class QtHomePage(HomeStateMixin, QtBasePage):
     def apply_theme(self) -> None:
         super().apply_theme()
         th = current_theme()
+        self._last_states.clear()
         self._rebuild_all_sections()
         self._rebuild_cards(self._breakpoint_cols())

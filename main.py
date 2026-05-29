@@ -93,13 +93,9 @@ def main():
                     QApplication(sys.argv)
                 from src.panel.qt_backend.app import QtPanelApp
                 app = QtPanelApp()
-            except ImportError:
-                print(
-                    "PySide6 未安装。Qt 后端需要 PySide6，"
-                    "请运行: pip install PySide6>=6.5.0\n"
-                    "回退到 tkinter 后端...",
-                    file=sys.stderr,
-                )
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("Qt 后端初始化失败，回退到 tkinter: %s", exc)
         if app is None:
             from src.panel.app import PanelApp
             app = PanelApp()

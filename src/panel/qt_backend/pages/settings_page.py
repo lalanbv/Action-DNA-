@@ -133,9 +133,11 @@ class QtSettingsPage(QtBasePage):
 
     def _on_backend_radio(self, mode: str) -> None:
         cfg = load_config()
+        if cfg.editor.gui_backend == mode:
+            return
         cfg.editor.gui_backend = mode
         save_config(cfg)
-        self._backend_hint_label.setText(t("settings.gui_backend_hint"))
+        self.app.schedule_restart()
 
     def _build_status_section(self, layout: QVBoxLayout, th, sm) -> None:
         hm = self.app.hotkey_manager
@@ -422,6 +424,11 @@ class QtSettingsPage(QtBasePage):
         super().apply_theme()
         th = current_theme()
         sm = qt_scale_manager()
+
+        # 更新滚动区域
+        scroll = self.findChild(QScrollArea)
+        if scroll:
+            scroll.setStyleSheet(f"background-color: {th.page_bg};")
 
         # 更新主题单选按钮样式
         for rb in self._theme_radios.values():

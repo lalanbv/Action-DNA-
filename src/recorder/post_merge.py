@@ -6,13 +6,14 @@ import math
 
 from src.core.action import ActionType
 from src.core.step_types import BaseStep, MouseMoveStep, WaitStep
+from src.recorder.path_utils import simplify_path as _simplify_path
 
 
 def merge_path_sequences(
     steps: list[BaseStep],
     *,
     drag_sequence_max_gap: float = 0.5,
-    direction_cosine_threshold: float = 0.5,
+    direction_cosine_threshold: float = 0.7,
 ) -> list[BaseStep]:
     """后处理: 合并同类型的连续路径序列。
 
@@ -152,7 +153,9 @@ def combine_path_sequence(
     waits = inter_waits or []
 
     for idx, step in enumerate(sequence):
-        for px, py, pt in step.path_points:
+        pts = step.path_points
+        start = 1 if idx > 0 and pts and combined_points else 0
+        for px, py, pt in pts[start:]:
             combined_points.append((px, py, round(pt + time_offset, 4)))
         time_offset += step.recorded_duration
         total_duration += step.recorded_duration
@@ -165,7 +168,7 @@ def combine_path_sequence(
     return MouseMoveStep(
         offset_x=total_dx,
         offset_y=total_dy,
-        path_points=combined_points,
+        path_points=_simplify_path(combined_points),
         recorded_duration=round(total_duration, 4),
         button=sequence[0].button,
     )

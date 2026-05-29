@@ -26,7 +26,10 @@ from src.recorder.post_merge import merge_path_sequences, merge_wait_sequences
 from src.recorder.recorder import RecordedEvent
 from src.utils.i18n import t
 
+from src.recorder.path_utils import simplify_path as _simplify_path
+
 logger = logging.getLogger(__name__)
+
 
 
 class EventMerger:
@@ -50,6 +53,11 @@ class EventMerger:
     # 修饰键集合（用于组合键检测）
     MODIFIER_KEYS: frozenset[str] = frozenset({
         "ctrl", "shift", "alt", "cmd", "capslock",
+    })
+
+    # 游戏移动键
+    MOVEMENT_KEYS: frozenset[str] = frozenset({
+        "w", "a", "s", "d", "up", "down", "left", "right",
     })
 
     def __init__(self) -> None:
@@ -97,6 +105,16 @@ class EventMerger:
             merged, consumed = self._try_merge_key_combo(events, i)
             if merged is not None:
                 steps.append(merged)
+                last_step_time = events[i + consumed - 1].timestamp
+                i += consumed
+                continue
+
+            # 3.5 游戏移动键长按 + 修饰键连点（如 W 长按中点击 Shift 冲刺）
+            result = self._try_merge_gaming_hold(events, i)
+            if result is not None:
+                gaming_steps, consumed = result
+                for gs in gaming_steps:
+                    steps.append(gs)
                 last_step_time = events[i + consumed - 1].timestamp
                 i += consumed
                 continue
@@ -181,8 +199,8 @@ class EventMerger:
     DOUBLE_CLICK_MAX_DISTANCE: int = 5
     # 多击检测中允许跳过的 mouse_move 最大距离（像素）
     MULTI_CLICK_MOVE_TOLERANCE: int = 10
-    # 路径采样间距（像素）
-    PATH_SAMPLE_DISTANCE: int = 8
+    # 路径采样间距（像素）— 越小轨迹越精确
+    PATH_SAMPLE_DISTANCE: int = 2
 
     def _try_merge_click(
         self,
@@ -351,7 +369,7 @@ class EventMerger:
                     return MouseMoveStep(
                         offset_x=evt.x - down.x,
                         offset_y=evt.y - down.y,
-                        path_points=raw_points,
+                        path_points=_simplify_path(raw_points),
                         recorded_duration=round(duration, 4),
                         button=down.button,
                     ), consumed
@@ -456,13 +474,19 @@ class EventMerger:
         间隔 >= HOLD_THRESHOLD → HOLD_KEY
         跳过中间同 key 的 key_down（长按产生的 repeat 事件）。
         跳过中间的非键盘事件（鼠标/滚轮等），避免长按期间因鼠标移动丢失匹配。
-        遇到同 key 的 key_down+key_up 对（完整按键周期）时中断，说明长按已结束。
+        跳过修饰键的按下/释放（长按 W 时可能点按 Shift）。
+        跳过其他键的 key_up（之前按下的键松开，不影响当前键的长按）。
+        仅当遇到其他非修饰键的 key_down 时中断（新按键开始）。
         """
         if start >= len(events):
             return None, 1
 
         down = events[start]
         if down.event_type != "key_down":
+            return None, 1
+
+        # repeat 事件不作为合并起点
+        if down.is_repeat:
             return None, 1
 
         scan_end = min(start + self._KEY_PAIR_SCAN_LIMIT, len(events))
@@ -486,14 +510,14 @@ class EventMerger:
             # 跳过非键盘事件（鼠标/滚轮等），长按期间可能有鼠标移动
             if not evt.is_key_event:
                 continue
-            # 修饰键事件 → 跳过（组合键按住时修饰键可能被按下/释放）
+            # 修饰键事件 → 跳过（长按 W 时可能点按 Shift）
             if evt.key in self.MODIFIER_KEYS:
                 continue
-            # 其他按键的完整周期 → 中断
-            if evt.event_type == "key_down" and evt.key != down.key:
-                break
-            if evt.event_type == "key_up" and evt.key != down.key:
-                break
+            # 其他键的 key_up → 跳过（不影响当前键长按）
+            if evt.event_type == "key_up":
+                continue
+            # 其他非修饰键的 key_down → 中断（新按键开始）
+            break
 
         # 未找到配对 key_up → 跳过
         return None, 1
@@ -570,6 +594,7 @@ class EventMerger:
 
         检测先按下非修饰键再按下修饰键的组合键，如 W+Shift。
         仅当修饰键在非修饰键释放前被按下时才触发。
+        对于移动键长按 + 修饰键连点的游戏模式，交给 _try_merge_gaming_hold 处理。
         """
         if start >= len(events):
             return None, 1
@@ -612,8 +637,19 @@ class EventMerger:
                 end_idx = j
                 if not currently_held:
                     break
+                # 移动键仍按住但所有修饰键已释放 → 中断，
+                # 避免吃掉移动键的后续长按事件
+                if first.key in self.MOVEMENT_KEYS:
+                    modifiers_still_held = any(
+                        k in combo_modifiers for k in currently_held
+                    )
+                    if not modifiers_still_held and combo_modifiers:
+                        break
 
-        if not combo_modifiers or currently_held:
+        if not combo_modifiers:
+            return None, 1
+        # 移动键仍按住（修饰键已释放）时，视为有效组合键
+        if currently_held and first.key not in currently_held:
             return None, 1
 
         all_tapped = [first.key] + [k for k in tapped_keys if k != first.key]
@@ -626,6 +662,151 @@ class EventMerger:
                 events[end_idx].timestamp - first.timestamp, 4,
             ),
         ), end_idx - start + 1
+
+    # 游戏移动键长按的快速组合键判定阈值（秒）
+    _GAMING_COMBO_MAX_INITIAL_GAP: float = 0.1
+
+    def _try_merge_gaming_hold(
+        self,
+        events: list[RecordedEvent],
+        start: int,
+    ) -> tuple[list[BaseStep], int] | None:
+        """游戏模式: 移动键长按 + 修饰键连点。
+
+        检测 WASD/方向键长按期间点击 Shift 的模式：
+        - W 长按 + Shift → 冲刺
+        - A/S/D + Shift → 对应方向闪避
+        - 多次点击 Shift → 多次冲刺/闪避
+
+        仅在移动键有 repeat 事件或从按下到首个修饰键间隔较长时激活，
+        快速 W+Shift 同按时由 _try_merge_key_combo_reverse 处理。
+        """
+        if start >= len(events):
+            return None
+
+        first = events[start]
+        if first.event_type != "key_down":
+            return None
+        if first.key not in self.MOVEMENT_KEYS:
+            return None
+        if first.is_repeat:
+            return None
+
+        move_key = first.key
+        has_repeat = False
+        # (mod_key, down_idx, up_idx)
+        modifier_taps: list[tuple[str, int, int]] = []
+        pending_mod: tuple[str, int] | None = None
+        end_idx = start
+
+        scan_end = min(start + self._KEY_PAIR_SCAN_LIMIT, len(events))
+
+        for j in range(start + 1, scan_end):
+            evt = events[j]
+
+            # 跳过非键盘事件（鼠标/滚轮等）
+            if not evt.is_key_event:
+                end_idx = j
+                continue
+
+            # 同一移动键
+            if evt.key == move_key:
+                if evt.event_type == "key_down":
+                    if evt.is_repeat:
+                        has_repeat = True
+                    end_idx = j
+                    continue
+                if evt.event_type == "key_up":
+                    end_idx = j
+                    break
+                continue
+
+            # 修饰键事件
+            if evt.key in self.MODIFIER_KEYS:
+                if evt.event_type == "key_down" and pending_mod is None:
+                    pending_mod = (evt.key, j)
+                    end_idx = j
+                elif evt.event_type == "key_up" and pending_mod is not None:
+                    if evt.key == pending_mod[0]:
+                        modifier_taps.append(
+                            (pending_mod[0], pending_mod[1], j),
+                        )
+                        pending_mod = None
+                        end_idx = j
+                continue
+
+            # 其他非修饰键事件
+            if evt.event_type == "key_down":
+                # 第二个移动键 → 保留已收集的修饰键，中断扫描
+                if evt.key in self.MOVEMENT_KEYS:
+                    break
+                # 非移动键按下（如 E 交互）→ 中断但保留已有数据
+                break
+            # 非修饰键释放 → 跳过，不影响扫描
+            if evt.event_type == "key_up":
+                continue
+
+        # 中断时尚未配对的修饰键按下 → 丢弃，不跨过中断点搜索
+        # 否则会吞噬中断点和新 key_up 之间的无关事件（如 E 按键）
+        pending_mod = None
+
+        if not modifier_taps:
+            return None
+
+        # 无 repeat 且首个修饰键间隔短 → 交给反向组合键处理
+        first_mod_down_idx = modifier_taps[0][1]
+        time_to_first_mod = events[first_mod_down_idx].timestamp - first.timestamp
+        if not has_repeat and round(time_to_first_mod, 3) <= self._GAMING_COMBO_MAX_INITIAL_GAP:
+            return None
+
+        # 构建步骤序列：移动键长按段 + 修饰键组合段 交替
+        result_steps: list[BaseStep] = []
+        prev_time = first.timestamp
+
+        for mod_key, mod_down_idx, mod_up_idx in modifier_taps:
+            mod_down_time = events[mod_down_idx].timestamp
+            hold_dur = mod_down_time - prev_time
+            if hold_dur >= self.HOLD_THRESHOLD:
+                result_steps.append(HoldKeyStep(
+                    keys_hold=move_key,
+                    hold_duration=round(hold_dur, 2),
+                ))
+            elif hold_dur > 0.01:
+                result_steps.append(PressKeyStep(
+                    key=move_key,
+                    recorded_duration=round(hold_dur, 4),
+                ))
+
+            mod_up_time = events[mod_up_idx].timestamp
+            combo_dur = mod_up_time - mod_down_time
+            combo_str = f"{mod_key},{move_key}"
+            result_steps.append(KeyComboStep(
+                combo_keys=combo_str,
+                combo_mode="hold_tap",
+                recorded_duration=round(combo_dur, 4),
+            ))
+
+            prev_time = mod_up_time
+
+        # 最终移动键长按段
+        end_time = events[end_idx].timestamp
+        remaining = end_time - prev_time
+        if remaining >= self.HOLD_THRESHOLD:
+            result_steps.append(HoldKeyStep(
+                keys_hold=move_key,
+                hold_duration=round(remaining, 2),
+            ))
+        elif remaining > 0.01:
+            result_steps.append(PressKeyStep(
+                key=move_key,
+                recorded_duration=round(remaining, 4),
+            ))
+
+        if not result_steps:
+            return None
+
+        consumed = end_idx - start + 1
+        return result_steps, consumed
 
     # 滚轮合并时间阈值（秒）
     SCROLL_MERGE_MAX_GAP: float = 0.3
@@ -676,8 +857,10 @@ class EventMerger:
             pos_y=last_y,
         ), consumed
 
-    # 大范围移动路径阈值（像素）
-    MOVE_PATH_MIN_DISTANCE: int = 30
+    # 大范围移动路径阈值（像素）— 降低以保留游戏中的小幅视角移动
+    MOVE_PATH_MIN_DISTANCE: int = 5
+    # 最短持续时间（秒）— 过滤手部抖动，< 30ms 的 5px 移动视为噪声
+    MOVE_PATH_MIN_DURATION: float = 0.03
 
     def _try_merge_move_path(
         self,
@@ -726,18 +909,21 @@ class EventMerger:
             duration = round(
                 events[start + consumed - 1].timestamp - start_time, 4,
             )
+            if duration < self.MOVE_PATH_MIN_DURATION:
+                return None, consumed
+            simplified = _simplify_path(path_points)
             if target_type == "mouse_drag":
                 return MouseMoveStep(
                     offset_x=prev_x - start_x,
                     offset_y=prev_y - start_y,
-                    path_points=path_points,
+                    path_points=simplified,
                     recorded_duration=duration,
                     button=button,
                 ), consumed
             return MouseMoveStep(
                 offset_x=prev_x - start_x,
                 offset_y=prev_y - start_y,
-                path_points=path_points,
+                path_points=simplified,
                 recorded_duration=duration,
             ), consumed
 

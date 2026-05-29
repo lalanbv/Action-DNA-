@@ -193,8 +193,11 @@ class SettingsPage(BasePage):
     def _on_backend_radio(self, mode: str) -> None:
         from src.core.config import load_config, save_config
         cfg = load_config()
+        if cfg.editor.gui_backend == mode:
+            return
         cfg.editor.gui_backend = mode
         save_config(cfg)
+        self.app.schedule_restart()
 
     def _populate_tree(self):
         for item in self._tree.get_children():

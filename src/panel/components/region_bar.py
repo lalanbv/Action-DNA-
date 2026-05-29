@@ -47,38 +47,35 @@ class RegionBar(tk.Frame):
 
     def add_to_toolbar(self, toolbar: "ToolbarFrame", section: str) -> None:
         """以 toolbar 为 parent 创建每个元素，并作为独立 grid cell 注册。"""
-        if section not in toolbar._sections:
-            toolbar.add_section(section)
-
         rb_full = themed_radiobutton(
             toolbar, text=t("chain.fullscreen"),
             variable=self.var_mode, value="fullscreen",
             command=self._on_mode_change,
         )
-        toolbar._items.append(("item", rb_full))
+        toolbar.add_item("item", rb_full, section=section)
 
         rb_custom = themed_radiobutton(
             toolbar, text=t("chain.custom_region"),
             variable=self.var_mode, value="custom",
             command=self._on_mode_change,
         )
-        toolbar._items.append(("item", rb_custom))
+        toolbar.add_item("item", rb_custom, section=section)
 
         sep = themed_separator(toolbar, orient=tk.VERTICAL)
-        toolbar._items.append(("sep", sep))
+        toolbar.add_item("sep", sep, section=section)
 
         self.btn_pick = themed_button(
             toolbar, text=t("chain.pick_region"),
             command=self._on_pick, state=tk.DISABLED,
         )
-        toolbar._items.append(("item", self.btn_pick))
+        toolbar.add_item("item", self.btn_pick, section=section)
 
         if self._on_reset:
             btn_reset = themed_button(
                 toolbar, text=t("chain.reset_fullscreen"),
                 command=self._on_reset,
             )
-            toolbar._items.append(("item", btn_reset))
+            toolbar.add_item("item", btn_reset, section=section)
 
     def _build_full(self, th: CanvasTheme) -> None:
         """完整模式（独立区域，带标签）。"""
@@ -132,3 +129,5 @@ class RegionBar(tk.Frame):
     def apply_theme(self) -> None:
         th = current_theme()
         self.configure(bg=th.toolbar_bg if self._compact else th.page_bg)
+        from src.panel.widgets import cascade_theme
+        cascade_theme(self)

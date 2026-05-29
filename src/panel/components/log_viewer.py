@@ -65,10 +65,15 @@ class LogViewer(tk.Frame):
 
     def _build_ui(self) -> None:
         theme = current_theme()
+        self._build_toolbar()
+        self._build_tree()
 
-        # 工具栏
+    def _build_toolbar(self) -> None:
+        theme = current_theme()
+
         toolbar = tk.Frame(self, bg=theme.panel_header_bg)
         toolbar.pack(fill=tk.X)
+        self._toolbar_frame = toolbar
 
         tk.Label(
             toolbar, text=t("workflow.log.title"),
@@ -123,7 +128,7 @@ class LogViewer(tk.Frame):
             side=tk.RIGHT, padx=2,
         )
 
-        # Treeview
+    def _build_tree(self) -> None:
         columns = ("time", "type", "node", "message")
         self._tree = ttk.Treeview(
             self, columns=columns, show="headings", height=8,
@@ -156,6 +161,46 @@ class LogViewer(tk.Frame):
                 foreground=type_color(event_type),
                 background=tint_for(event_type),
             )
+
+    # ── 主题 ──────────────────────────────────────────────
+
+    def apply_theme(self) -> None:
+        th = current_theme()
+        self.configure(bg=th.panel_bg)
+        if hasattr(self, "_toolbar_frame") and self._toolbar_frame.winfo_exists():
+            self._toolbar_frame.configure(bg=th.panel_header_bg)
+            self._theme_toolbar_children(self._toolbar_frame, th)
+        for event_type in LogEventType:
+            try:
+                self._tree.tag_configure(
+                    event_type.value,
+                    foreground=type_color(event_type),
+                    background=tint_for(event_type),
+                )
+            except tk.TclError:
+                pass
+
+    @staticmethod
+    def _theme_toolbar_children(widget: tk.Widget, th) -> None:
+        for child in widget.winfo_children():
+            try:
+                if hasattr(child, "apply_theme"):
+                    child.apply_theme()
+                    continue
+                wclass = child.winfo_class()
+                if wclass == "Frame":
+                    child.configure(bg=th.panel_header_bg)
+                    LogViewer._theme_toolbar_children(child, th)
+                elif wclass == "Label":
+                    child.configure(bg=th.panel_header_bg, fg=th.text_primary)
+                elif wclass in ("Radiobutton", "Checkbutton"):
+                    child.configure(
+                        bg=th.panel_header_bg, fg=th.text_secondary,
+                        selectcolor=th.bg_surface,
+                        activebackground=th.panel_header_bg,
+                    )
+            except tk.TclError:
+                pass
 
     # ── 过滤 ──────────────────────────────────────────────
 

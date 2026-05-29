@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Callable
 
 import tkinter as tk
@@ -80,6 +81,8 @@ from src.panel.canvas._interaction_types import (
 from src.panel.canvas.node_shared import PORT_IN, TAG_SELECTION_HIGHLIGHT
 from src.panel.canvas.theme import current_theme
 from src.panel.models.enums import EdgeStyle
+
+_IS_MACOS = sys.platform == "darwin"
 
 if TYPE_CHECKING:
     from src.panel.canvas.graph_canvas import GraphCanvas
@@ -175,6 +178,15 @@ class InteractionHandler(HitTestMixin, ConnectMixin, SelectMixin):
         self._context_menu_motion_start: tuple[int, int] | None = None
         self._context_menu_pending_event: tk.Event | None = None
 
+        # 拖拽距离阈值（区分点击和拖拽）
+        self._drag_actually_moved: bool = False
+
+        # macOS 滚轮累积（平滑缩放）
+        self._scroll_delta_acc: float = 0.0
+        self._scroll_flush_id: str | None = None
+        self._scroll_last_x: float = 0
+        self._scroll_last_y: float = 0
+
         self._bind_events()
 
     def _bind_events(self):
@@ -183,11 +195,20 @@ class InteractionHandler(HitTestMixin, ConnectMixin, SelectMixin):
         c.bind("<B1-Motion>", self._on_motion)
         c.bind("<ButtonRelease-1>", self._on_release)
         c.bind("<Double-ButtonPress-1>", self._on_double_click)
-        c.bind("<ButtonPress-3>", self._on_right_click)
-        c.bind("<B3-Motion>", self._on_right_motion)
-        c.bind("<ButtonPress-2>", self._on_middle_press)
-        c.bind("<B2-Motion>", self._on_middle_motion)
-        c.bind("<ButtonRelease-2>", self._on_middle_release)
+
+        if _IS_MACOS:
+            # macOS: 触控板双指点击 / Ctrl+点击 → ButtonPress-2（右键）
+            c.bind("<ButtonPress-2>", self._on_right_click)
+            c.bind("<B2-Motion>", self._on_right_motion)
+            c.bind("<ButtonPress-3>", self._on_right_click)
+            c.bind("<B3-Motion>", self._on_right_motion)
+            # macOS 无物理中键，用 Space+拖拽平移
+        else:
+            c.bind("<ButtonPress-3>", self._on_right_click)
+            c.bind("<B3-Motion>", self._on_right_motion)
+            c.bind("<ButtonPress-2>", self._on_middle_press)
+            c.bind("<B2-Motion>", self._on_middle_motion)
+            c.bind("<ButtonRelease-2>", self._on_middle_release)
         c.bind("<MouseWheel>", self._on_mousewheel)
         c.bind("<Button-4>", lambda e: self._on_mousewheel_linux(e, 1))
         c.bind("<Button-5>", lambda e: self._on_mousewheel_linux(e, -1))
@@ -422,8 +443,32 @@ class InteractionHandler(HitTestMixin, ConnectMixin, SelectMixin):
             )
 
     def _on_mousewheel(self, event: tk.Event):
-        factor = 1.1 if event.delta > 0 else 0.9
-        self._callback(CB_ZOOM_REQUEST, screen_x=event.x, screen_y=event.y, factor=factor)
+        if _IS_MACOS:
+            # macOS 触控板产生大量小 delta 事件，累积后统一缩放
+            self._scroll_delta_acc += event.delta
+            self._scroll_last_x = event.x
+            self._scroll_last_y = event.y
+            if self._scroll_flush_id:
+                self._canvas.after_cancel(self._scroll_flush_id)
+            self._scroll_flush_id = self._canvas.after(30, self._flush_scroll)
+        else:
+            factor = 1.1 if event.delta > 0 else 0.9
+            self._callback(CB_ZOOM_REQUEST, screen_x=event.x, screen_y=event.y, factor=factor)
+
+    def _flush_scroll(self) -> None:
+        self._scroll_flush_id = None
+        acc = self._scroll_delta_acc
+        self._scroll_delta_acc = 0.0
+        if abs(acc) < 0.5:
+            return
+        factor = 1.0 + acc * 0.02
+        factor = max(0.85, min(1.15, factor))
+        self._callback(
+            CB_ZOOM_REQUEST,
+            screen_x=self._scroll_last_x,
+            screen_y=self._scroll_last_y,
+            factor=factor,
+        )
 
     def _on_mousewheel_linux(self, event: tk.Event, direction: int):
         factor = 1.1 if direction > 0 else 0.9
@@ -509,6 +554,7 @@ class InteractionHandler(HitTestMixin, ConnectMixin, SelectMixin):
         self._canvas.raise_node(node_id)
         self._drag_start_sx = event.x
         self._drag_start_sy = event.y
+        self._drag_actually_moved = False
         self._multi_drag_offsets.clear()
         self._canvas.configure(cursor="fleur")
         self._callback(CB_DRAG_STARTED, node_ids=[node_id])
@@ -534,6 +580,13 @@ class InteractionHandler(HitTestMixin, ConnectMixin, SelectMixin):
     def _do_drag(self, event: tk.Event):
         if not self._drag_node_id:
             return
+
+        if not self._drag_actually_moved:
+            dx = abs(event.x - self._drag_start_sx)
+            dy = abs(event.y - self._drag_start_sy)
+            if dx <= _CLICK_MOTION_THRESHOLD and dy <= _CLICK_MOTION_THRESHOLD:
+                return
+            self._drag_actually_moved = True
 
         wx, wy = self._canvas.screen_to_world(event.x, event.y)
 
@@ -586,6 +639,15 @@ class InteractionHandler(HitTestMixin, ConnectMixin, SelectMixin):
         if not self._drag_node_id:
             return
         self._canvas.configure(cursor="")
+
+        if not self._drag_actually_moved:
+            node_id = self._drag_node_id
+            self._mode = InteractionMode.IDLE
+            self._drag_node_id = None
+            self._reset_auto_insert_state()
+            self._callback(CB_DRAG_ENDED, node_ids=[node_id])
+            return
+
         wx, wy = self._canvas.screen_to_world(event.x, event.y)
 
         if self._multi_drag_offsets and len(self._selected_node_ids) > 1:

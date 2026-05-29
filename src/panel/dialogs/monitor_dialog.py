@@ -9,10 +9,16 @@ from src.core.action import FoundAction
 from src.core.monitor import MonitorConfig
 from src.panel.canvas.theme import current_theme
 from src.panel.dialogs._dialog_utils import make_dialog
-from src.panel.dialogs.click_image_dialog import _found_action_labels, _found_action_from_label
+from src.panel.dialogs.click_image_dialog import _FOUND_ACTION_OPTIONS
 from src.utils.paths import get_assets_dir
-from src.panel.widgets import themed_button, themed_checkbutton, themed_entry, themed_frame, themed_label, themed_separator, themed_spinbox
+from src.panel.widgets import themed_button, themed_checkbutton, themed_dropdown, themed_entry, themed_frame, themed_label, themed_separator, themed_spinbox
 from src.utils.i18n import t
+
+# 处理动作选项（排除 OUTPUT_COORD，监控器不需要输出坐标）
+_MONITOR_ACTION_OPTIONS = [
+    (val, key) for val, key in _FOUND_ACTION_OPTIONS
+    if val != FoundAction.OUTPUT_COORD.name
+]
 
 
 def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
@@ -100,13 +106,12 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
 
     # 处理动作
     themed_label(dlg, text=t("dialog.label.handler_action")).grid(row=row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    _fa_labels = _found_action_labels()
-    _action_items = [(fa, _fa_labels[fa]) for fa in FoundAction if fa != FoundAction.OUTPUT_COORD]
-    _action_display = [lbl for _, lbl in _action_items]
-    _initial_fa_label = _fa_labels.get(monitor.handler_action, monitor.handler_action.value)
-    var_handler_action.set(_initial_fa_label)
-    ttk.Combobox(dlg, textvariable=var_handler_action, values=_action_display,
-                 state="readonly", width=16).grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
+    handler_dropdown = themed_dropdown(
+        dlg, options=_MONITOR_ACTION_OPTIONS,
+        value=monitor.handler_action.name,
+        state="readonly", width=16,
+    )
+    handler_dropdown.grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
     row += 1
 
     # 处理目标图片
@@ -144,8 +149,8 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
 
     def on_ok():
         # 将显示值转换回 FoundAction 枚举
-        action_val = var_handler_action.get()
-        handler_action = _found_action_from_label(action_val) or monitor.handler_action
+        handler_val = handler_dropdown.get_value()
+        handler_action = FoundAction[handler_val] if handler_val in FoundAction.__members__ else FoundAction.LEFT_CLICK
 
         result = MonitorConfig(
             name=var_name.get().strip() or t("common.unnamed_monitor"),

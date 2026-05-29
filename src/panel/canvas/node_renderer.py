@@ -18,17 +18,15 @@ from typing import Literal
 import tkinter as tk
 import tkinter.font as tkFont
 
-from src.core.flow import FlowNode, NodeType
+from src.core.flow import FlowNode
 from src.panel.canvas.node_shared import (
     CORNER_RADIUS,
     FONT_BOLD,
-    HEADER_H,
     LOD_FULL,
     LOD_MINIMAL,
     LOD_SIMPLIFIED,
-    PORT_HIT_RADIUS,
     PORT_RADIUS,
-    PORT_STRIP_H,
+    PORT_VISUAL_RADIUS,
     TAG_PORT,
     TAG_PORT_IN,
     TAG_PORT_IN_ARROW,
@@ -38,9 +36,9 @@ from src.panel.canvas.node_shared import (
     TAG_SELECTION_RING,
     NODE_SPECS as _NODE_SPECS,
     NODE_ICONS as _NODE_ICONS,
+    node_spec as _node_spec,
     node_intersects_rect,
     node_size,
-    node_spec as _node_spec,
     port_label as _port_label,
     port_positions,
     type_label as _type_label,
@@ -55,7 +53,7 @@ from src.panel.canvas.theme import (
     node_border_color,
     port_fill_color,
 )
-from src.utils.i18n import t
+
 
 # ── tkinter-only 常量 ──────────────────────────────────────
 SHADOW_OFFSET = 4
@@ -318,25 +316,27 @@ def render_node(
             )
 
     # ── 端口 ──
-    # 输入端口: 空心环 + 向内箭头指示 (上方, 数据流入)
-    # 输出端口: 实心圆 + 向外箭头指示 (下方, 数据流出)
+    # 输入端口: 菱形轮廓（空心）+ 向内箭头 ▼ (上方, 数据流入)
+    # 输出端口: 实心圆 + 向外箭头 ▼ (下方, 数据流出)
     ports = port_positions(node)
     for label, (wx, wy) in ports.items():
         px = (wx - offset_x) * zoom
         py = (wy - offset_y) * zoom
-        r = PORT_RADIUS * zoom
+        vr = PORT_VISUAL_RADIUS * zoom  # 可见半径
 
         if label == "in":
-            # 输入端口: 空心环 + 向内三角 ▼
-            item_id = canvas.create_oval(
-                px - r, py - r, px + r, py + r,
-                fill=theme.bg_surface, outline=theme.port_in_outline, width=2,
+            # 可见菱形轮廓（空心）
+            d = vr
+            diamond_coords = [px, py - d, px + d, py, px, py + d, px - d, py]
+            item_id = canvas.create_polygon(
+                *diamond_coords,
+                fill=theme.bg_surface, outline=theme.port_in_outline, width=max(1.5, 2 * zoom),
                 tags=(tag, f"port:{node.node_id}:in", TAG_PORT, TAG_PORT_IN),
             )
             items.ports_in[label] = item_id
             # 方向指示 ▼ (指向节点内部)
             if lod != LOD_MINIMAL:
-                arrow_r = max(2, 3 * zoom)
+                arrow_r = max(2, 2.5 * zoom)
                 aid = canvas.create_polygon(
                     px - arrow_r, py - arrow_r * 0.5,
                     px + arrow_r, py - arrow_r * 0.5,
@@ -347,21 +347,21 @@ def render_node(
                 items.port_arrows[label] = aid
         else:
             port_color = port_fill_color(label, theme)
-            # 输出端口: 实心圆 + 向外三角 ▲
+            # 可见实心圆
             item_id = canvas.create_oval(
-                px - r, py - r, px + r, py + r,
-                fill=port_color, outline=theme.port_out_outline, width=2,
+                px - vr, py - vr, px + vr, py + vr,
+                fill=port_color, outline=theme.port_out_outline, width=max(1, 1.5 * zoom),
                 tags=(tag, f"port:{node.node_id}:{label}", TAG_PORT, TAG_PORT_OUT),
             )
             items.ports_out[label] = item_id
-            # 方向指示 ▲ (指向节点外部)
+            # 方向指示 ▼ (指向节点外部)
             if lod != LOD_MINIMAL:
-                arrow_r = max(2, 3 * zoom)
+                arrow_r = max(2, 2.5 * zoom)
                 aid = canvas.create_polygon(
                     px - arrow_r, py + arrow_r * 0.5,
                     px + arrow_r, py + arrow_r * 0.5,
                     px, py - arrow_r,
-                    fill=theme.port_out_outline, outline="",
+                    fill=port_color, outline="",
                     tags=(tag, f"port:{node.node_id}:{label}", TAG_PORT, TAG_PORT_OUT_ARROW),
                 )
                 items.port_arrows[label] = aid
@@ -374,7 +374,7 @@ def render_node(
                     font_obj = _get_cached_font(theme.font_family, label_font_size, FONT_BOLD)
                     text_w = font_obj.measure(short) + 8 * zoom
                     text_h = 10 * zoom
-                    label_y = py + r + 2 * zoom + text_h / 2
+                    label_y = py + vr + 2 * zoom + text_h / 2
                     lbl_bg = canvas.create_rectangle(
                         px - text_w / 2, label_y - text_h / 2,
                         px + text_w / 2, label_y + text_h / 2,
@@ -516,13 +516,15 @@ def update_node_position(
     for label, (wx, wy) in ports.items():
         px = (wx - offset_x) * zoom
         py = (wy - offset_y) * zoom
-        r = PORT_RADIUS * zoom
+        vr = PORT_VISUAL_RADIUS * zoom
 
         if label == "in" and label in items.ports_in:
-            canvas.coords(items.ports_in[label], px - r, py - r, px + r, py + r)
-            # 更新方向指示 ▼
+            # 菱形: 更新 polygon 坐标
+            d = vr
+            diamond_coords = [px, py - d, px + d, py, px, py + d, px - d, py]
+            canvas.coords(items.ports_in[label], *diamond_coords)
             if label in items.port_arrows:
-                arrow_r = max(2, 3 * zoom)
+                arrow_r = max(2, 2.5 * zoom)
                 canvas.coords(
                     items.port_arrows[label],
                     px - arrow_r, py - arrow_r * 0.5,
@@ -530,10 +532,10 @@ def update_node_position(
                     px, py + arrow_r,
                 )
         elif label in items.ports_out:
-            canvas.coords(items.ports_out[label], px - r, py - r, px + r, py + r)
-            # 更新方向指示 ▲
+            # 圆形: 更新 oval 坐标
+            canvas.coords(items.ports_out[label], px - vr, py - vr, px + vr, py + vr)
             if label in items.port_arrows:
-                arrow_r = max(2, 3 * zoom)
+                arrow_r = max(2, 2.5 * zoom)
                 canvas.coords(
                     items.port_arrows[label],
                     px - arrow_r, py + arrow_r * 0.5,
@@ -544,7 +546,7 @@ def update_node_position(
         if label in items.port_labels:
             label_font_size = max(7, int(8 * zoom))
             text_h = 10 * zoom
-            label_y = py + r + 2 * zoom + text_h / 2
+            label_y = py + vr + 2 * zoom + text_h / 2
             short = _port_label(node.node_type, label)
             if label in items.port_label_bgs:
                 if short:

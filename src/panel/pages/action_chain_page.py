@@ -19,6 +19,7 @@ from src.panel.canvas.scale import scale_manager
 from src.panel.canvas.theme import current_theme
 from src.panel.components import (
     LogViewer,
+    LoopControls,
     ProfileBar,
     ProportionalTreeMixin,
     RegionBar,
@@ -29,6 +30,7 @@ from src.panel.components import (
     ThreeColumnLayout,
     ToolbarFrame,
 )
+from src.panel.components.editor_toolbar import add_editor_toolbar_sections
 from src.panel.components.toolbar_icons import ICONS
 from src.panel.controllers.action_chain_controller import ActionChainController
 from src.panel.models.chain_model import ChainModel
@@ -59,7 +61,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         self.controller: ActionChainController | None = None
         self.step_ring: StepRing | None = None
         self._ring_log: RingBufferLog | None = None
-        self._paned: ttk.PanedWindow | None = None
+        self._paned: tk.PanedWindow | None = None
         self._monitor_widget = None
         self.status_bar: StatusBar | None = None
         self._toolbar: ToolbarFrame | None = None
@@ -169,7 +171,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         super().apply_theme()
         if hasattr(self, '_layout'):
             self._layout.apply_theme()
-        for widget in (self.profile_bar, self.region_bar, self.run_controls):
+        for widget in (self.profile_bar, self.region_bar, self.run_controls, self.loop_controls):
             if widget and widget.winfo_exists():
                 widget.apply_theme()
 
@@ -181,15 +183,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         toolbar.pack(fill=tk.X, padx=th.pad_xs, pady=th.pad_xs)
         self._toolbar = toolbar
 
-        toolbar.make_button(
-            "nav", text=t("common.back"), icon="back",
-            command=self._go_home,
-            tooltip=t("common.back"), shortcut_hint="Esc",
-        )
-        title_label = themed_label(toolbar, text=t("chain.title"), style="section")
-        toolbar.add_widget("nav", title_label)
-
-        toolbar.add_section("profile")
+        # ── 创建各通用组件 ──
         self.profile_bar = ProfileBar(
             toolbar,
             on_load=self._on_load_profile,
@@ -200,9 +194,11 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             on_import=self._on_import_profile,
             compact=True,
         )
-        self.profile_bar.add_to_toolbar(toolbar, "profile")
 
-        toolbar.add_section("region")
+        self.loop_controls = LoopControls(
+            toolbar, on_change=self._on_loop_changed,
+        )
+
         self.region_bar = RegionBar(
             toolbar,
             on_fullscreen=self.controller.set_fullscreen,
@@ -210,11 +206,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             on_reset=self.controller.set_fullscreen,
             compact=True,
         )
-        self.region_bar.add_to_toolbar(toolbar, "region")
 
-        toolbar.add_spacer()
-
-        toolbar.add_section("run")
         self.run_controls = RunControls(
             toolbar,
             on_start=self._on_start,
@@ -222,8 +214,19 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             on_resume=self._on_resume,
             on_stop=self._on_stop,
         )
-        self.run_controls.add_to_toolbar(toolbar, "run")
 
+        # ── 通用工具栏布局 ──
+        add_editor_toolbar_sections(
+            toolbar,
+            title_text=t("chain.title"),
+            on_back=self._go_home,
+            profile_bar=self.profile_bar,
+            loop_controls=self.loop_controls,
+            region_bar=self.region_bar,
+            run_controls=self.run_controls,
+        )
+
+        # ── 动作链特有：清空 + 状态 ──
         from src.panel.components.toolbar_tooltip import ToolbarTooltip
 
         btn_clear = themed_button(
@@ -241,9 +244,8 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         ToolbarTooltip(self._lbl_status, t("chain.status.ready"))
 
     def _build_left_panel(self, parent):
-        sm = scale_manager()
         self.step_palette = StepPalette(
-            parent, on_add_step=self._add_step_dialog, width=sm.s(90),
+            parent, on_add_step=self._add_step_dialog,
         )
 
     def _build_center_panel(self, parent):
@@ -254,7 +256,6 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         self.log_viewer.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
     def _build_right_panel(self, parent):
-        th = current_theme()
         self.step_props = StepPropertyPanel(
             parent,
             on_move_up=self._on_move_up,
@@ -262,7 +263,6 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             on_edit=self._on_edit_step,
             on_delete=self._on_delete_step,
             on_enabled_change=self._on_step_enabled_change,
-            width=th.panel_width_right,
         )
 
     def _build_step_list(self, parent):
@@ -452,3 +452,6 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
     def _refresh_profile_list(self):
         names = self.controller.list_profiles()
         self.profile_bar.refresh_list(names, self.model.current_profile_name)
+
+    def _on_loop_changed(self) -> None:
+        """LoopControls 模式变化回调 — 由子类 Mixin 使用。"""

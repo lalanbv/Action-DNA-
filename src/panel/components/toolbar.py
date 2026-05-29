@@ -17,6 +17,7 @@ import tkinter as tk
 from typing import Callable
 
 from src.panel.canvas.theme import current_theme
+from src.panel.canvas.theme.style_mappings import TOOLBAR_BTN_CONFIG
 from src.panel.components.toolbar_tooltip import ToolbarTooltip
 from src.panel.widgets import LabelButton, themed_button, themed_separator
 from src.utils.i18n import t
@@ -60,8 +61,8 @@ ICONS: dict[str, str] = {
 
 # ── 按钮内边距 (参考 Apple HIG 28pt 触控目标) ──────────────
 
-_PADX = 8
-_PADY = 4
+_PADX: int = TOOLBAR_BTN_CONFIG["padx"]  # type: ignore[assignment]
+_PADY: int = TOOLBAR_BTN_CONFIG["pady"]  # type: ignore[assignment]
 
 
 class ToolbarFrame(tk.Frame):
@@ -83,6 +84,7 @@ class ToolbarFrame(tk.Frame):
         self._reflow_id: str | None = None
         self._is_reflowing: bool = False
         self._last_width: int = -1
+        self._last_height: int = -1
 
         self.pack_propagate(False)
         self.configure(height=36)
@@ -142,6 +144,22 @@ class ToolbarFrame(tk.Frame):
             self.add_section(section)
         self._items.append(("item", widget))
 
+    def add_item(self, itype: str, widget: tk.Widget, *, section: str = "") -> None:
+        """添加一个带类型标注的元素到工具栏。
+
+        公共接口，供 ProfileBar / RegionBar / RunControls 等组件使用，
+        避免直接访问 _items。
+        """
+        if section and section not in self._sections:
+            self.add_section(section)
+        self._items.append((itype, widget))
+
+    def request_reflow(self) -> None:
+        """请求延迟重排，供嵌入组件在尺寸变化时调用。"""
+        if self._reflow_id is not None:
+            self.after_cancel(self._reflow_id)
+        self._reflow_id = self.after(80, self._do_reflow)
+
     def add_spacer(self) -> None:
         spacer = tk.Frame(self, bg=current_theme().toolbar_bg)
         self._items.append(("spacer", spacer))
@@ -178,10 +196,11 @@ class ToolbarFrame(tk.Frame):
     def _on_configure(self, event: tk.Event) -> None:
         if event.widget is not self or self._is_reflowing:
             return
-        w = event.width
+        w, h = event.width, event.height
         if w == self._last_width:
             return
         self._last_width = w
+        self._last_height = h
         if self._reflow_id is not None:
             self.after_cancel(self._reflow_id)
         self._reflow_id = self.after(150, self._do_reflow)
@@ -197,6 +216,11 @@ class ToolbarFrame(tk.Frame):
             self._is_reflowing = False
 
     def _measure_width(self, widget: tk.Widget) -> int:
+        # 1. Prefer explicit min_width (font-measured, always reliable)
+        mw = getattr(widget, "min_width", 0)
+        if mw > 1:
+            return mw
+        # 2. Fall back to tkinter geometry
         w = widget.winfo_reqwidth()
         if w > 1:
             return w
@@ -305,13 +329,41 @@ class ToolbarFrame(tk.Frame):
 
             y += row_h
 
-        self.configure(height=max(y, 36))
+        new_height = max(y, 36)
+        if new_height != self._last_height:
+            self._last_height = new_height
+            self.configure(height=new_height)
 
     # ── 主题 ──────────────────────────────────────────────
 
     def apply_theme(self) -> None:
         th = current_theme()
         self.configure(bg=th.toolbar_bg)
+        for itype, widget in self._items:
+            if not widget.winfo_exists():
+                continue
+            if hasattr(widget, "apply_theme"):
+                try:
+                    widget.apply_theme()
+                except tk.TclError:
+                    pass
+            elif itype == "sep":
+                try:
+                    widget.configure(bg=th.border_default)
+                except tk.TclError:
+                    pass
+            elif itype == "spacer":
+                try:
+                    widget.configure(bg=th.toolbar_bg)
+                except tk.TclError:
+                    pass
+            else:
+                try:
+                    wclass = widget.winfo_class()
+                    if wclass == "Label":
+                        widget.configure(fg=th.text_primary, bg=th.toolbar_bg)
+                except tk.TclError:
+                    pass
 
 
 class RunControls(tk.Frame):
@@ -353,28 +405,26 @@ class RunControls(tk.Frame):
 
     def add_to_toolbar(self, toolbar: "ToolbarFrame", section: str) -> None:
         """以 toolbar 为 parent 创建每个按钮，并作为独立 grid cell 注册。"""
-        if section not in toolbar._sections:
-            toolbar.add_section(section)
-
         self.btn_start = themed_button(
             toolbar, text=self._label("common.start", "start"), style="primary",
-            command=self._on_start, padx=_PADX, pady=_PADY,
+            command=self._on_start,
+            padx=_PADX, pady=_PADY,
         )
-        toolbar._items.append(("item", self.btn_start))
+        toolbar.add_item("item", self.btn_start, section=section)
 
         self.btn_pause = themed_button(
             toolbar, text=self._label("common.pause", "pause"),
             command=self._handle_pause, state=tk.DISABLED,
             padx=_PADX, pady=_PADY,
         )
-        toolbar._items.append(("item", self.btn_pause))
+        toolbar.add_item("item", self.btn_pause, section=section)
 
         self.btn_stop = themed_button(
             toolbar, text=self._label("common.stop", "stop"), style="danger",
             command=self._on_stop, state=tk.DISABLED,
             padx=_PADX, pady=_PADY,
         )
-        toolbar._items.append(("item", self.btn_stop))
+        toolbar.add_item("item", self.btn_stop, section=section)
 
     def _handle_pause(self) -> None:
         if self._state == "paused":
@@ -415,3 +465,9 @@ class RunControls(tk.Frame):
     def apply_theme(self) -> None:
         th = current_theme()
         self.configure(bg=th.toolbar_bg)
+        for btn in (self.btn_start, self.btn_pause, self.btn_stop):
+            if btn is not None and btn.winfo_exists():
+                try:
+                    btn.apply_theme()
+                except tk.TclError:
+                    pass

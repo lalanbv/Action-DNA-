@@ -8,262 +8,23 @@ from __future__ import annotations
 import tkinter as tk
 from typing import TYPE_CHECKING, Any, Callable
 
-from src.panel.canvas.theme import current_theme, CanvasTheme, theme_registry
+from src.panel.canvas.theme import current_theme, CanvasTheme
 from src.panel.canvas.scale import scale_manager
 from src.panel.canvas.theme.style_mappings import (
-    _STYLE_FONTS, _BUTTON_STYLES, resolve_font as _resolve_font,
+    _BUTTON_STYLES, resolve_font as _resolve_font,
     derive_hover_bg as _derive_hover_bg,
 )
 
 if TYPE_CHECKING:
-    from src.panel.components.themed_checkbox import ThemedCheckbox
     from src.panel.components.themed_entry import ThemedEntry
+    from src.panel.components.themed_checkbox import ThemedCheckbox
     from src.panel.components.themed_radio import ThemedRadio
+    from src.panel.components.dna_dropdown import DNADropdown
 
 
-class LabelButton(tk.Frame):
-    """tk.Frame + tk.Label 组合按钮 — 使用外框 Frame 实现可靠边框，macOS 兼容。"""
-
-    def __init__(
-        self,
-        parent: tk.Widget,
-        text: str = "",
-        command: Callable[[], None] | None = None,
-        bg: str | None = None,
-        fg: str | None = None,
-        activebackground: str | None = None,
-        activeforeground: str | None = None,
-        disabledforeground: str | None = None,
-        disabledbackground: str | None = None,
-        border_color: str | None = None,
-        font: tuple | None = None,
-        padx: int | None = None,
-        pady: int | None = None,
-        cursor: str = "hand2",
-        **kw: Any,
-    ) -> None:
-        self._command = command
-        # 从主题系统读取默认颜色，避免硬编码
-        _th = current_theme()
-        _bg = _th.btn_bg if bg is None else bg
-        _fg = _th.text_primary if fg is None else fg
-        _active_fg = _th.text_on_accent if activeforeground is None else activeforeground
-        _disabled_fg = _th.btn_disabled_fg if disabledforeground is None else disabledforeground
-        _disabled_bg = _th.btn_disabled_bg if disabledbackground is None else disabledbackground
-        _border_color = border_color or _bg
-        _font = font if font is not None else _th.font_body
-
-        self._bg = _bg
-        self._fg = _fg
-        self._active_bg = activebackground if activebackground is not None else _derive_hover_bg(_bg)
-        self._active_fg = _active_fg
-        self._disabled_fg = _disabled_fg
-        self._disabled_bg = _disabled_bg
-        self._border_color = _border_color
-        self._enabled = True
-        self._pressed = False
-        self._style_name: str | None = None
-        sm = scale_manager()
-        padx = sm.s(12) if padx is None else padx
-        pady = sm.s(4) if pady is None else pady
-
-        _initial_state = kw.pop("state", None)
-
-        frame_kw: dict[str, Any] = {}
-        for key in ("highlightbackground", "highlightthickness",
-                     "highlightcolor", "takefocus"):
-            if key in kw:
-                kw.pop(key)
-
-        super().__init__(
-            parent,
-            bg=self._border_color,
-            padx=1,
-            pady=1,
-            cursor=cursor,
-            **frame_kw,
-        )
-
-        self._label = tk.Label(
-            self,
-            text=text,
-            bg=_bg,
-            fg=_fg,
-            font=_font,
-            padx=padx,
-            pady=pady,
-            cursor=cursor,
-        )
-        self._label.pack(fill=tk.BOTH, expand=True)
-
-        self._label.bind("<Enter>", self._on_enter)
-        self._label.bind("<Leave>", self._on_leave)
-        self._label.bind("<ButtonPress-1>", self._on_press)
-        self._label.bind("<ButtonRelease-1>", self._on_release)
-        # macOS 兼容：Frame 上也绑定按钮事件，防止事件投递到 Frame 时丢失
-        tk.Frame.bind(self, "<ButtonPress-1>", self._on_press)
-        tk.Frame.bind(self, "<ButtonRelease-1>", self._on_release)
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<Destroy>", self._on_destroy)
-
-        if _initial_state in ("disabled", tk.DISABLED):
-            self._enabled = False
-            if self._disabled_bg:
-                self._label.configure(bg=self._disabled_bg)
-            self._label.configure(fg=self._disabled_fg, cursor="arrow")
-            self.configure(cursor="arrow")
-
-        self._theme_reg_id = theme_registry().register(self)
-
-    def _on_enter(self, _event: tk.Event) -> None:
-        if self._enabled:
-            self._label.configure(bg=self._active_bg, fg=self._active_fg)
-
-    def _on_leave(self, _event: tk.Event) -> None:
-        if self._enabled:
-            self._label.configure(bg=self._bg, fg=self._fg)
-
-    def _on_destroy(self, _event: tk.Event) -> None:
-        theme_registry().unregister(self._theme_reg_id)
-
-    def _on_press(self, _event: tk.Event) -> None:
-        if self._enabled:
-            self._pressed = True
-            self._label.configure(bg=self._active_bg)
-
-    def _on_release(self, _event: tk.Event) -> None:
-        was_pressed = self._pressed
-        self._pressed = False
-        if self._enabled:
-            self._label.configure(bg=self._bg, fg=self._fg)
-            if was_pressed and self._command:
-                self._command()
-
-    def configure(self, **kw: Any) -> None:
-        if "command" in kw:
-            self._command = kw.pop("command")
-        if "state" in kw:
-            state = kw.pop("state")
-            if state in ("disabled", tk.DISABLED):
-                self._enabled = False
-                if self._disabled_bg:
-                    self._label.configure(bg=self._disabled_bg)
-                self._label.configure(fg=self._disabled_fg, cursor="arrow")
-                self.configure(cursor="arrow")
-            else:
-                self._enabled = True
-                self._label.configure(bg=self._bg, fg=self._fg, cursor="hand2")
-                self.configure(cursor="hand2")
-        label_kw = {}
-        frame_kw = {}
-        if "bg" in kw:
-            self._bg = kw.pop("bg")
-            self._active_bg = _derive_hover_bg(self._bg)
-            if self._enabled:
-                label_kw["bg"] = self._bg
-        if "fg" in kw:
-            self._fg = kw.pop("fg")
-            if self._enabled:
-                label_kw["fg"] = self._fg
-        if "text" in kw:
-            label_kw["text"] = kw.pop("text")
-        if "font" in kw:
-            label_kw["font"] = kw.pop("font")
-        if "padx" in kw:
-            label_kw["padx"] = kw.pop("padx")
-        if "pady" in kw:
-            label_kw["pady"] = kw.pop("pady")
-        if "activebackground" in kw:
-            self._active_bg = kw.pop("activebackground")
-        if "activeforeground" in kw:
-            self._active_fg = kw.pop("activeforeground")
-        if "border_color" in kw:
-            self._border_color = kw.pop("border_color")
-            frame_kw["bg"] = self._border_color
-        if "cursor" in kw:
-            label_kw["cursor"] = kw.pop("cursor")
-
-        remaining = {}
-        for key, val in kw.items():
-            if key in ("highlightbackground", "highlightthickness",
-                       "highlightcolor", "takefocus", "relief", "bd",
-                       "disabledforeground", "disabledbackground"):
-                continue
-            remaining[key] = val
-
-        if label_kw:
-            self._label.configure(**label_kw)
-        if frame_kw:
-            super().configure(**frame_kw)
-        if remaining:
-            self._label.configure(**remaining)
-
-    config = configure
-
-    def cget(self, key: str) -> Any:
-        if key == "state":
-            return "disabled" if not self._enabled else "normal"
-        if key == "text":
-            return self._label.cget("text")
-        if key in ("bg", "fg", "font", "padx", "pady", "cursor"):
-            return self._label.cget(key)
-        return super().cget(key)
-
-    @property
-    def command(self) -> Callable[[], None] | None:
-        return self._command
-
-    def set_style(self, style_name: str) -> None:
-        """按预定义样式名更新按钮外观。"""
-        self._style_name = style_name
-        th = current_theme()
-        cfg = _BUTTON_STYLES.get(style_name, _BUTTON_STYLES["secondary"])
-        bg = getattr(th, cfg["bg_prop"])
-        fg = getattr(th, cfg["fg_prop"])
-        self.configure(bg=bg, fg=fg)
-
-    def bind(self, sequence=None, func=None, add=None):
-        """同时绑定到外框 Frame 和内部 Label，确保事件不丢失。"""
-        if sequence and sequence.startswith("<Button"):
-            self._label.bind(sequence, func, add)
-            return super().bind(sequence, func, add)
-        return super().bind(sequence, func, add)
-
-    def apply_theme(self, theme: CanvasTheme | None = None) -> None:
-        """主题切换时更新颜色（由 apply_theme_recursive 跳过递归）"""
-        if theme is None:
-            theme = current_theme()
-        if not self.winfo_exists():
-            return
-
-        if self._style_name:
-            cfg = _BUTTON_STYLES.get(self._style_name, _BUTTON_STYLES["secondary"])
-            new_bg = getattr(theme, cfg["bg_prop"])
-            new_fg = getattr(theme, cfg["fg_prop"])
-            self._bg = new_bg
-            self._fg = new_fg
-            self._active_bg = _derive_hover_bg(new_bg)
-            self._active_fg = new_fg
-            self._border_color = theme.btn_border
-            self._disabled_fg = theme.btn_disabled_fg
-            self._disabled_bg = theme.btn_disabled_bg
-        else:
-            self._bg = theme.btn_bg
-            self._fg = theme.text_primary
-            self._active_bg = _derive_hover_bg(theme.btn_bg)
-            self._active_fg = theme.text_on_accent
-            self._border_color = theme.btn_border
-            self._disabled_fg = theme.btn_disabled_fg
-            self._disabled_bg = theme.btn_disabled_bg
-
-        if self._enabled:
-            self._label.configure(bg=self._bg, fg=self._fg)
-        else:
-            if self._disabled_bg:
-                self._label.configure(bg=self._disabled_bg)
-            self._label.configure(fg=self._disabled_fg)
-        super().configure(bg=self._border_color)
+# LabelButton 向后兼容别名 — 惰性加载以避免循环导入
+# widgets → dna_button → components/__init__ → profile_bar → widgets
+LabelButton = None  # type: ignore[assignment]
 
 
 
@@ -306,6 +67,10 @@ def themed_button(
     style: str = "secondary",
     **kw: Any,
 ) -> LabelButton:
+    global LabelButton
+    if LabelButton is None:
+        from src.panel.components.dna_button import DNAButton
+        LabelButton = DNAButton
     t = current_theme()
     sm = scale_manager()
     btn_cfg = _BUTTON_STYLES.get(style, _BUTTON_STYLES["secondary"])
@@ -318,6 +83,7 @@ def themed_button(
         parent,
         text=text,
         command=command,
+        style=style,
         bg=bg,
         fg=fg,
         activebackground=hover_bg,
@@ -328,7 +94,6 @@ def themed_button(
         font=t.font_body,
         **kw,
     )
-    btn._style_name = style
     return btn
 
 
@@ -366,21 +131,31 @@ def themed_spinbox(parent: tk.Misc, **kw: Any) -> tk.Spinbox:
 def themed_checkbutton(
     parent: tk.Misc, text: str = "", **kw: Any
 ) -> ThemedCheckbox:
-    from src.panel.components.themed_checkbox import ThemedCheckbox as _ThemedCheckbox
+    from src.panel.components.dna_toggle import DNAToggle
 
     t = current_theme()
     kw.setdefault("bg", _inherit_bg(parent, t.page_bg))
-    return _ThemedCheckbox(parent, text=text, **kw)
+    return DNAToggle(parent, text=text, mode="checkbox", **kw)
 
 
 def themed_radiobutton(
     parent: tk.Misc, text: str = "", **kw: Any
 ) -> ThemedRadio:
-    from src.panel.components.themed_radio import ThemedRadio as _ThemedRadio
+    from src.panel.components.dna_toggle import DNAToggle
 
     t = current_theme()
     kw.setdefault("bg", _inherit_bg(parent, t.page_bg))
-    return _ThemedRadio(parent, text=text, **kw)
+    return DNAToggle(parent, text=text, mode="radio", **kw)
+
+
+def themed_dropdown(
+    parent: tk.Misc,
+    options: list[tuple[str, str]] | None = None,
+    **kw: Any,
+) -> DNADropdown:
+    from src.panel.components.dna_dropdown import DNADropdown
+
+    return DNADropdown(parent, options=options, **kw)
 
 
 def themed_labelframe(
@@ -404,6 +179,25 @@ def themed_separator(parent: tk.Misc, orient: str = "horizontal", **kw: Any) -> 
     else:
         kw.setdefault("height", 1)
     return tk.Frame(parent, **kw)
+
+
+def themed_paned_window(
+    parent: tk.Misc, orient: str = tk.HORIZONTAL, **kw: Any,
+) -> tk.PanedWindow:
+    """创建统一风格的 PanedWindow，分隔条使用 separator_color 平坦线。"""
+    t = current_theme()
+    sm = scale_manager()
+    kw.setdefault("opaqueresize", True)
+    kw.setdefault("sashwidth", max(sm.s(6), 4))
+    kw.setdefault("sashrelief", tk.FLAT)
+    kw.setdefault("bd", 0)
+    kw.setdefault("bg", t.separator_color)
+    kw.setdefault("orient", orient)
+    if "sashcursor" not in kw:
+        kw["sashcursor"] = (
+            "sb_h_double_arrow" if orient == tk.HORIZONTAL else "sb_v_double_arrow"
+        )
+    return tk.PanedWindow(parent, **kw)
 
 
 def themed_danger_link(
@@ -443,7 +237,8 @@ def apply_theme_recursive(widget: tk.Widget, theme: CanvasTheme) -> None:
     """递归重新配置原生 tk 控件树的主题颜色
 
     跳过 Canvas/Treeview/Scrollbar。
-    自定义控件（有 apply_theme 方法）调用其 apply_theme() 后跳过子树。
+    自定义控件（有 apply_theme 方法）调用其 apply_theme() 后停止，
+    由该控件负责级联更新自身的子控件树。
     """
     if not widget.winfo_exists():
         return
@@ -460,7 +255,6 @@ def apply_theme_recursive(widget: tk.Widget, theme: CanvasTheme) -> None:
                 attr: getattr(theme, token)
                 for attr, token in _WIDGET_THEME_MAP[wclass].items()
             }
-            # Label 继承父级背景色，避免文字背景色块
             if wclass == "Label":
                 parent = widget.nametowidget(widget.winfo_parent())
                 cfg["bg"] = _inherit_bg(parent, theme.page_bg)
@@ -469,6 +263,18 @@ def apply_theme_recursive(widget: tk.Widget, theme: CanvasTheme) -> None:
             pass
     for child in widget.winfo_children():
         apply_theme_recursive(child, theme)
+
+
+def cascade_theme(widget: tk.Widget) -> None:
+    """复合控件 apply_theme 末尾调用，将主题级联到所有子控件。
+
+    复合控件在自己的 apply_theme 中先更新自身和已知子控件的颜色，
+    再调用此方法处理剩余的原生子控件。遇到有 apply_theme 的子控件
+    会自动触发其 apply_theme（递归停止，由该控件接管自己的子树）。
+    """
+    th = current_theme()
+    for child in widget.winfo_children():
+        apply_theme_recursive(child, th)
 
 
 def apply_to_toplevel(toplevel: tk.Toplevel) -> None:

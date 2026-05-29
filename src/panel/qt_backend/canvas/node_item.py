@@ -20,7 +20,9 @@ from src.panel.canvas.node_shared import (
     CORNER_RADIUS,
     LOD_MINIMAL,
     LOD_FULL,
+    LOD_SIMPLIFIED,
     PORT_RADIUS,
+    PORT_VISUAL_RADIUS,
     PORT_DOT_SCALE,
     PORT_LABEL_OFFSET,
     PORT_LABEL_WIDTH,
@@ -124,8 +126,11 @@ class QtNodeItem(QGraphicsWidget):
         node_type = self._node.node_type
 
         zoom = 1.0
-        if self._canvas:
-            zoom = self._canvas.zoom()
+        if self._canvas and not getattr(self._canvas, '_destroyed', False):
+            try:
+                zoom = self._canvas.zoom()
+            except RuntimeError:
+                zoom = self._cached_zoom
         if zoom != self._cached_zoom:
             self._cached_zoom = zoom
         lod = lod_level(self._cached_zoom)
@@ -161,7 +166,7 @@ class QtNodeItem(QGraphicsWidget):
         self._paint_header_text(painter, th, w, header_h)
         self._paint_body_text(painter, th, w, header_h, body_h, node_type)
 
-        if lod == LOD_FULL:
+        if lod in (LOD_FULL, LOD_SIMPLIFIED):
             self._paint_ports(painter, th, w, h, header_h, body_h, node_type)
 
         if self._execution_state:
@@ -242,22 +247,34 @@ class QtNodeItem(QGraphicsWidget):
         for label, (wx, wy) in positions.items():
             local_x = wx - nx
             local_y = wy - ny
-            is_output = label.startswith("out_")
+            is_input = label == "in"
             color = port_fill_color(label, th)
 
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(color))
-            painter.drawEllipse(
-                QPointF(local_x, local_y),
-                PORT_RADIUS * PORT_DOT_SCALE,
-                PORT_RADIUS * PORT_DOT_SCALE,
-            )
+            if is_input:
+                # 输入端口 — 菱形轮廓（空心）
+                d = PORT_VISUAL_RADIUS
+                path = QPainterPath()
+                path.moveTo(local_x, local_y - d)
+                path.lineTo(local_x + d, local_y)
+                path.lineTo(local_x, local_y + d)
+                path.lineTo(local_x - d, local_y)
+                path.closeSubpath()
+                painter.setPen(QPen(QColor(th.port_in_outline), 2))
+                painter.setBrush(QColor(th.bg_surface))
+                painter.drawPath(path)
+            else:
+                # 输出端口 — 实心圆
+                r = PORT_VISUAL_RADIUS
+                painter.setPen(QPen(QColor(th.port_out_outline), 1.5))
+                painter.setBrush(QColor(color))
+                painter.drawEllipse(QPointF(local_x, local_y), r, r)
 
             port_lbl = _port_label(node_type, label)
             if port_lbl:
                 painter.setFont(_FONT_PORT)
                 painter.setPen(QColor(th.text_muted))
-                offset = PORT_RADIUS * PORT_LABEL_OFFSET
+                offset = PORT_VISUAL_RADIUS + 4
+                is_output = not is_input
                 text_x = local_x + offset if is_output else local_x - offset
                 align = Qt.AlignmentFlag.AlignLeft if is_output else Qt.AlignmentFlag.AlignRight
                 painter.drawText(

@@ -106,6 +106,7 @@ class Minimap:
 
         # 边界缓存
         self._cached_bounds: tuple | None = None
+        self._destroyed: bool = False
 
         # 节点命中区域: node_id -> (x1, y1, x2, y2)
         self._node_rects: dict[str, tuple[float, float, float, float]] = {}
@@ -176,6 +177,8 @@ class Minimap:
 
     def _initial_show(self) -> None:
         """首次显示：等待画布有真实尺寸后再 place + 重绘。"""
+        if self._destroyed:
+            return
         w = self._canvas.winfo_width()
         h = self._canvas.winfo_height()
         if w < 10 or h < 10:
@@ -482,12 +485,16 @@ class Minimap:
 
         # ── 4. 缩放百分比 (复用 item) ──
         _, _, zoom = self._get_viewport()
+        zoom_text = f"{zoom * 100:.0f}%"
+        zoom_x = self._size - 8
+        zoom_y = self._height - 4
         if self._zoom_text_id:
-            mc.itemconfigure(self._zoom_text_id, text=f"{zoom * 100:.0f}%")
+            mc.coords(self._zoom_text_id, zoom_x, zoom_y)
+            mc.itemconfigure(self._zoom_text_id, text=zoom_text)
         else:
             self._zoom_text_id = mc.create_text(
-                self._size - 24, self._height - 6,
-                text=f"{zoom * 100:.0f}%",
+                zoom_x, zoom_y,
+                text=zoom_text,
                 fill=theme.text_muted,
                 font=(theme.font_family, sm.s(7)),
                 anchor="se",
@@ -621,11 +628,15 @@ class Minimap:
 
     def _do_full_redraw(self):
         self._redraw_id = None
+        if self._destroyed:
+            return
         self.full_redraw()
 
     def _do_resize_redraw(self):
         """Resize 完成后的轻量刷新：先更新视口矩形，再延迟全量重绘。"""
         self._redraw_id = None
+        if self._destroyed:
+            return
         self.update_viewport()
         self._redraw_id = self._canvas.after(80, self._do_full_redraw)
 
@@ -765,6 +776,7 @@ class Minimap:
         self.full_redraw()
 
     def destroy(self):
+        self._destroyed = True
         if self._redraw_id:
             self._canvas.after_cancel(self._redraw_id)
             self._redraw_id = None

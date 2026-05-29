@@ -1,7 +1,6 @@
 """WorkflowPropertiesMixin — 右侧属性面板填充。"""
 
 import tkinter as tk
-from tkinter import ttk
 
 from src.core.flow import FlowEdge, FlowNode, NodeType
 from src.core.error.error_config import ErrorConfig, ErrorStrategy, RetryPolicy
@@ -12,6 +11,7 @@ from src.panel.widgets import (
     themed_button,
     themed_checkbutton,
     themed_danger_link,
+    themed_dropdown,
     themed_entry,
     themed_frame,
     themed_label,
@@ -20,6 +20,29 @@ from src.panel.widgets import (
     themed_spinbox,
 )
 from src.utils.i18n import t
+
+# 错误策略选项 (value, i18n_key)
+_ERROR_STRATEGY_OPTIONS = [
+    ("inherit", "error_config.inherit"),
+    (ErrorStrategy.IGNORE.name, "error_config.strategy.ignore"),
+    (ErrorStrategy.SKIP.name, "error_config.strategy.skip"),
+    (ErrorStrategy.RETRY.name, "error_config.strategy.retry"),
+    (ErrorStrategy.FALLBACK.name, "error_config.strategy.fallback"),
+    (ErrorStrategy.FAIL_FAST.name, "error_config.strategy.fail_fast"),
+]
+
+# 耗尽策略选项
+_EXHAUSTED_STRATEGY_OPTIONS = [
+    (ErrorStrategy.IGNORE.name, "error_config.strategy.ignore"),
+    (ErrorStrategy.SKIP.name, "error_config.strategy.skip"),
+    (ErrorStrategy.FAIL_FAST.name, "error_config.strategy.fail_fast"),
+]
+
+# 边标签选项（非 i18n）
+_EDGE_LABEL_OPTIONS = [
+    ("default", "default"), ("true", "true"), ("false", "false"),
+    ("timeout", "timeout"), ("loop", "loop"), ("exit", "exit"),
+]
 
 
 class WorkflowPropertiesMixin:
@@ -201,28 +224,16 @@ class WorkflowPropertiesMixin:
             strategy_frame, text=t("error_config.strategy"), style="small",
         ).pack(side=tk.LEFT)
 
-        strategy_options = [
-            (t("error_config.inherit"), None),
-            (t("error_config.strategy.ignore"), ErrorStrategy.IGNORE),
-            (t("error_config.strategy.skip"), ErrorStrategy.SKIP),
-            (t("error_config.strategy.retry"), ErrorStrategy.RETRY),
-            (t("error_config.strategy.fallback"), ErrorStrategy.FALLBACK),
-            (t("error_config.strategy.fail_fast"), ErrorStrategy.FAIL_FAST),
-        ]
-        strategy_labels = [s[0] for s in strategy_options]
-
-        current_idx = 0
+        current_strategy_name = "inherit"
         if current_strategy is not None:
-            for i, (_, v) in enumerate(strategy_options):
-                if v == current_strategy:
-                    current_idx = i
-                    break
+            current_strategy_name = current_strategy.name
 
-        strategy_var = tk.StringVar(value=strategy_labels[current_idx])
-        ttk.Combobox(
-            strategy_frame, textvariable=strategy_var,
-            state="readonly", width=12, values=strategy_labels,
-        ).pack(side=tk.LEFT, padx=4)
+        self._strategy_dropdown = themed_dropdown(
+            strategy_frame, options=_ERROR_STRATEGY_OPTIONS,
+            value=current_strategy_name, state="readonly", width=12,
+            command=lambda _: _refresh_detail(),
+        )
+        self._strategy_dropdown.pack(side=tk.LEFT, padx=4)
 
         detail_frame = themed_frame(ec_frame)
         detail_frame.pack(fill=tk.X, padx=px, pady=2)
@@ -236,33 +247,19 @@ class WorkflowPropertiesMixin:
         retry_max_var = tk.DoubleVar(
             value=ec.retry_policy.max_delay if ec and ec.retry_policy else 30.0,
         )
-        exhausted_var = tk.StringVar(value=t("error_config.strategy.skip"))
+        exhausted_var = tk.StringVar(value=ErrorStrategy.SKIP.name)
         fallback_var = tk.StringVar(
             value=ec.fallback_label if ec and ec.strategy == ErrorStrategy.FALLBACK else "fallback",
         )
 
-        exhausted_options = [
-            t("error_config.strategy.ignore"),
-            t("error_config.strategy.skip"),
-            t("error_config.strategy.fail_fast"),
-        ]
-        exhausted_values = [ErrorStrategy.IGNORE, ErrorStrategy.SKIP, ErrorStrategy.FAIL_FAST]
-
         if ec and ec.exhausted_strategy:
-            for i, v in enumerate(exhausted_values):
-                if v == ec.exhausted_strategy:
-                    exhausted_var.set(exhausted_options[i])
-                    break
+            exhausted_var.set(ec.exhausted_strategy.name)
 
         def _refresh_detail(*_):
             for w in detail_frame.winfo_children():
                 w.destroy()
-            selected_label = strategy_var.get()
-            selected_strategy = None
-            for lbl, val in strategy_options:
-                if lbl == selected_label:
-                    selected_strategy = val
-                    break
+            selected_name = self._strategy_dropdown.get_value()
+            selected_strategy = None if selected_name == "inherit" else ErrorStrategy[selected_name]
 
             if selected_strategy == ErrorStrategy.RETRY:
                 for label_text, var, w, lo, hi, inc in [
@@ -283,10 +280,12 @@ class WorkflowPropertiesMixin:
                 themed_label(
                     rf4, text=t("error_config.exhausted_strategy"), style="small",
                 ).pack(side=tk.LEFT)
-                ttk.Combobox(
-                    rf4, textvariable=exhausted_var,
-                    state="readonly", width=10, values=exhausted_options,
-                ).pack(side=tk.LEFT, padx=4)
+                self._exhausted_dropdown = themed_dropdown(
+                    rf4, options=_EXHAUSTED_STRATEGY_OPTIONS,
+                    value=exhausted_var.get(), state="readonly", width=10,
+                    command=lambda v: exhausted_var.set(v),
+                )
+                self._exhausted_dropdown.pack(side=tk.LEFT, padx=4)
 
             elif selected_strategy == ErrorStrategy.FALLBACK:
                 rf = themed_frame(detail_frame)
@@ -299,22 +298,14 @@ class WorkflowPropertiesMixin:
                 ).pack(side=tk.LEFT, padx=4)
 
         def _apply_error_config():
-            selected_label = strategy_var.get()
-            selected_strategy = None
-            for lbl, val in strategy_options:
-                if lbl == selected_label:
-                    selected_strategy = val
-                    break
+            selected_name = self._strategy_dropdown.get_value()
+            selected_strategy = None if selected_name == "inherit" else ErrorStrategy[selected_name]
 
             if selected_strategy is None:
                 new_ec = None
             elif selected_strategy == ErrorStrategy.RETRY:
-                ex_label = exhausted_var.get()
-                ex_strategy = ErrorStrategy.SKIP
-                for i, lbl in enumerate(exhausted_options):
-                    if lbl == ex_label:
-                        ex_strategy = exhausted_values[i]
-                        break
+                ex_name = exhausted_var.get()
+                ex_strategy = ErrorStrategy[ex_name] if ex_name else ErrorStrategy.SKIP
                 new_ec = ErrorConfig(
                     strategy=ErrorStrategy.RETRY,
                     retry_policy=RetryPolicy(
@@ -333,13 +324,11 @@ class WorkflowPropertiesMixin:
                 new_ec = ErrorConfig(strategy=selected_strategy)
 
             self._controller.update_node_error_config(node_id, new_ec)
+            display = t("error_config.custom") + f": {self._strategy_dropdown.get_value()}"
             self._append_log(
-                t("error_config.custom") + f": {selected_label}"
-                if selected_strategy
-                else t("error_config.inherit"),
+                display if selected_strategy else t("error_config.inherit"),
             )
 
-        self._track_var(strategy_var, _refresh_detail)
         _refresh_detail()
         themed_button(
             ec_frame, text=t("common.ok"), command=_apply_error_config,
@@ -394,10 +383,10 @@ class WorkflowPropertiesMixin:
             settings_frame, text=f"{t('workflow.properties.edge_label')}:",
             style="small",
         ).pack(anchor=tk.W, padx=px, pady=(px, 0))
-        label_combo = ttk.Combobox(
-            settings_frame, textvariable=label_var,
-            state="readonly", width=14,
-            values=["default", "true", "false", "timeout", "loop", "exit"],
+        label_combo = themed_dropdown(
+            settings_frame, options=_EDGE_LABEL_OPTIONS,
+            value=edge.label or "default", state="readonly", width=14,
+            i18n=False, command=lambda v: label_var.set(v),
         )
         label_combo.pack(fill=tk.X, padx=px, pady=2)
 

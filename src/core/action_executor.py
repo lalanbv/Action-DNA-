@@ -419,17 +419,27 @@ class ActionExecutor:
         log.info("  长按 %s %.2fs", keys, duration)
 
     def _do_mouse_move(self, step: MouseMoveStep, gen: int) -> None:
-        """MOUSE_MOVE: 鼠标相对移动（支持按住按键拖拽）"""
+        """MOUSE_MOVE: 鼠标相对移动（支持按住按键拖拽）
+
+        优先使用 path_points 精确回放录制轨迹，
+        无路径点时退回到 Bezier 曲线偏移。
+        """
         if not self._alive(gen):
             return
 
         dx = step.offset_x
         dy = step.offset_y
 
-        if dx == 0 and dy == 0:
-            log.info("  鼠标移动: 偏移为0，跳过")
+        if dx == 0 and dy == 0 and not step.path_points:
+            log.info("  鼠标移动: 偏移为0且无路径点，跳过")
             return
 
+        # 有录制路径时，沿真实轨迹精确回放
+        if step.path_points and len(step.path_points) >= 2:
+            self._replay_recorded_path(step, gen)
+            return
+
+        # fallback: 无路径点时使用 Bezier 偏移
         jittered_dx = int(dx * random.uniform(0.93, 1.07))
         jittered_dy = int(dy * random.uniform(0.93, 1.07))
 
@@ -446,6 +456,49 @@ class ActionExecutor:
         )
 
         log.info("  鼠标移动: (%d,%d)→(%d,%d) %.2fs", dx, dy, jittered_dx, jittered_dy, jittered_duration)
+        time.sleep(random.uniform(0.02, 0.08))
+
+    def _replay_recorded_path(self, step: MouseMoveStep, gen: int) -> None:
+        """沿录制的真实路径回放鼠标移动，保留轨迹形状和速度。"""
+        path_points = step.path_points
+        origin_x, origin_y, _ = path_points[0]
+
+        cur_x, cur_y = self.input.get_mouse_position()
+
+        off_x = cur_x - origin_x
+        off_y = cur_y - origin_y
+        adjusted = [(px + off_x, py + off_y, pt) for px, py, pt in path_points]
+
+        click_num = None
+        path_ok = True
+        try:
+            if step.button:
+                click_num = self.input.mouse_down(cur_x, cur_y, step.button)
+
+            final_x, final_y = self.input.replay_path(
+                path_points=adjusted,
+                jitter_px=1,
+            )
+        except Exception:
+            final_x, final_y = cur_x, cur_y
+            path_ok = False
+            log.exception("  路径回放异常")
+        finally:
+            if step.button:
+                try:
+                    self.input.mouse_up(final_x, final_y, step.button, click_num)
+                except Exception:
+                    log.exception("  mouse_up 失败")
+
+        if not self._alive(gen):
+            return
+
+        if path_ok:
+            log.info(
+                "  精确路径回放: %d点 (%d,%d)→(%d,%d) %.2fs",
+                len(path_points), cur_x, cur_y, final_x, final_y,
+                step.recorded_duration,
+            )
         time.sleep(random.uniform(0.02, 0.08))
 
     def _do_key_combo(self, step: KeyComboStep, gen: int) -> None:

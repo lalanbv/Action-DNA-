@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog
 
 try:
     from PIL import Image, ImageTk
@@ -19,41 +19,32 @@ from src.panel.canvas.theme import current_theme
 from src.panel.dialogs.base_dialog import StepDialogBase
 from src.panel.dialogs.dialog_registry import DialogRegistry
 from src.panel.dialogs.key_picker import SyncedVar
-from src.panel.widgets import themed_button, themed_entry, themed_frame, themed_label, themed_spinbox
+from src.panel.widgets import themed_button, themed_dropdown, themed_entry, themed_frame, themed_label, themed_spinbox
 from src.utils.i18n import t
 
 
-_FOUND_ACTION_I18N = {
-    FoundAction.LEFT_CLICK: "dialog.found_action.left_click",
-    FoundAction.RIGHT_CLICK: "dialog.found_action.right_click",
-    FoundAction.LEFT_DOUBLE_CLICK: "dialog.found_action.left_double_click",
-    FoundAction.RIGHT_DOUBLE_CLICK: "dialog.found_action.right_double_click",
-    FoundAction.LONG_PRESS: "dialog.found_action.long_press",
-    FoundAction.DRAG_TO: "dialog.found_action.drag_to",
-    FoundAction.ONLY_MOVE: "dialog.found_action.only_move",
-    FoundAction.OUTPUT_COORD: "dialog.found_action.output_coord",
-}
+_FOUND_ACTION_OPTIONS = [
+    (fa.name, i18n_key)
+    for fa, i18n_key in [
+        (FoundAction.LEFT_CLICK, "dialog.found_action.left_click"),
+        (FoundAction.RIGHT_CLICK, "dialog.found_action.right_click"),
+        (FoundAction.LEFT_DOUBLE_CLICK, "dialog.found_action.left_double_click"),
+        (FoundAction.RIGHT_DOUBLE_CLICK, "dialog.found_action.right_double_click"),
+        (FoundAction.LONG_PRESS, "dialog.found_action.long_press"),
+        (FoundAction.DRAG_TO, "dialog.found_action.drag_to"),
+        (FoundAction.ONLY_MOVE, "dialog.found_action.only_move"),
+        (FoundAction.OUTPUT_COORD, "dialog.found_action.output_coord"),
+    ]
+]
 
-_DETECT_MODE_I18N = {
-    DetectMode.WAIT_UNTIL_FOUND: "dialog.detect_mode.wait_until_found",
-    DetectMode.SKIP_IF_NOT_FOUND: "dialog.detect_mode.skip_if_not_found",
-    DetectMode.FAIL_IF_NOT_FOUND: "dialog.detect_mode.fail_if_not_found",
-}
-
-
-def _found_action_labels() -> dict[FoundAction, str]:
-    return {fa: t(key) for fa, key in _FOUND_ACTION_I18N.items()}
-
-
-def _found_action_from_label(label: str) -> FoundAction | None:
-    for fa, lbl in _found_action_labels().items():
-        if lbl == label:
-            return fa
-    return None
-
-
-def _detect_mode_labels() -> dict[DetectMode, str]:
-    return {dm: t(key) for dm, key in _DETECT_MODE_I18N.items()}
+_DETECT_MODE_OPTIONS = [
+    (dm.name, i18n_key)
+    for dm, i18n_key in [
+        (DetectMode.WAIT_UNTIL_FOUND, "dialog.detect_mode.wait_until_found"),
+        (DetectMode.SKIP_IF_NOT_FOUND, "dialog.detect_mode.skip_if_not_found"),
+        (DetectMode.FAIL_IF_NOT_FOUND, "dialog.detect_mode.fail_if_not_found"),
+    ]
+]
 
 
 class ClickImageDialog(StepDialogBase):
@@ -61,14 +52,10 @@ class ClickImageDialog(StepDialogBase):
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         self._photo_ref: list[object] = [None]
-        self._fa_labels: dict[FoundAction, str] = {}
-        self._dm_labels: dict[DetectMode, str] = {}
         super().__init__(*args, **kwargs)
 
     def _build_content(self) -> None:
         th = current_theme()
-        self._fa_labels = _found_action_labels()
-        self._dm_labels = _detect_mode_labels()
         row = 0
 
         # 图片路径 + 预览
@@ -103,14 +90,13 @@ class ClickImageDialog(StepDialogBase):
         themed_label(
             self._content_frame, text=t("dialog.label.detect_mode"),
         ).grid(row=row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-        self._vars["detect_mode"] = tk.StringVar(
-            value=self._dm_labels.get(DetectMode.SKIP_IF_NOT_FOUND, ""),
-        )
-        ttk.Combobox(
-            self._content_frame, textvariable=self._vars["detect_mode"],
+        self._dm_dropdown = themed_dropdown(
+            self._content_frame,
+            options=_DETECT_MODE_OPTIONS,
+            value=DetectMode.SKIP_IF_NOT_FOUND.name,
             state="readonly", width=22,
-            values=list(self._dm_labels.values()),
-        ).grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm)
+        )
+        self._dm_dropdown.grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm)
         row += 1
 
         # 重试设置
@@ -134,16 +120,14 @@ class ClickImageDialog(StepDialogBase):
         themed_label(
             self._content_frame, text=t("dialog.label.found_action"),
         ).grid(row=row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-        self._vars["found_action"] = tk.StringVar(
-            value=self._fa_labels.get(FoundAction.LEFT_CLICK, ""),
-        )
-        fa_cb = ttk.Combobox(
-            self._content_frame, textvariable=self._vars["found_action"],
+        self._fa_dropdown = themed_dropdown(
+            self._content_frame,
+            options=_FOUND_ACTION_OPTIONS,
+            value=FoundAction.LEFT_CLICK.name,
             state="readonly", width=22,
-            values=list(self._fa_labels.values()),
+            command=self._on_found_action_value,
         )
-        fa_cb.grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm)
-        fa_cb.bind("<<ComboboxSelected>>", self._on_found_action_changed)
+        self._fa_dropdown.grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm)
         row += 1
 
         # 条件字段：长按秒数（仅 LONG_PRESS）
@@ -206,19 +190,19 @@ class ClickImageDialog(StepDialogBase):
 
         self._common_row = row
 
-    def _on_found_action_changed(self, *_: object) -> None:
-        label = self._vars["found_action"].get()
-        fa_long = self._fa_labels.get(FoundAction.LONG_PRESS, "")
-        fa_drag = self._fa_labels.get(FoundAction.DRAG_TO, "")
-        if label == fa_long:
+    def _on_found_action_value(self, val: str) -> None:
+        if val == FoundAction.LONG_PRESS.name:
             self._hold_frame.grid()
             self._drag_frame.grid_remove()
-        elif label == fa_drag:
+        elif val == FoundAction.DRAG_TO.name:
             self._hold_frame.grid_remove()
             self._drag_frame.grid()
         else:
             self._hold_frame.grid_remove()
             self._drag_frame.grid_remove()
+
+    def _on_found_action_changed(self) -> None:
+        self._on_found_action_value(self._fa_dropdown.get_value())
 
     def _browse(self) -> None:
         p = filedialog.askopenfilename(
@@ -250,21 +234,13 @@ class ClickImageDialog(StepDialogBase):
             )
 
     def _populate_fields(self, action: BaseStep) -> None:
-        self._fa_labels = _found_action_labels()
-        self._dm_labels = _detect_mode_labels()
         self._vars["image_path"].set(action.image_path)
         self._vars["threshold"].set(action.threshold)
-        for k, v in self._dm_labels.items():
-            if k == action.detect_mode:
-                self._vars["detect_mode"].set(v)
-                break
+        self._dm_dropdown.set_value(action.detect_mode.name)
         self._vars["retry_count"].set(action.retry_count)
         self._vars["retry_wait_min"].set(action.retry_wait_min)
         self._vars["retry_wait_max"].set(action.retry_wait_max)
-        for k, v in self._fa_labels.items():
-            if k == action.found_action:
-                self._vars["found_action"].set(v)
-                break
+        self._fa_dropdown.set_value(action.found_action.name)
         self._vars["hold_duration"].set(action.hold_duration)
         self._vars["drag_offset_x"].set(action.drag_offset_x)
         self._vars["drag_offset_y"].set(action.drag_offset_y)
@@ -284,16 +260,10 @@ class ClickImageDialog(StepDialogBase):
         step.drag_offset_x = self._get_int("drag_offset_x", default=0)
         step.drag_offset_y = self._get_int("drag_offset_y", default=0)
         step.save_coord_name = self._vars["save_coord_name"].get()
-        dm_label = self._vars["detect_mode"].get()
-        for k, v in self._dm_labels.items():
-            if v == dm_label:
-                step.detect_mode = k
-                break
-        fa_label = self._vars["found_action"].get()
-        for k, v in self._fa_labels.items():
-            if v == fa_label:
-                step.found_action = k
-                break
+        dm_val = self._dm_dropdown.get_value()
+        fa_val = self._fa_dropdown.get_value()
+        step.detect_mode = DetectMode[dm_val] if dm_val in DetectMode.__members__ else DetectMode.SKIP_IF_NOT_FOUND
+        step.found_action = FoundAction[fa_val] if fa_val in FoundAction.__members__ else FoundAction.LEFT_CLICK
         self._apply_common(step)
         return step
 

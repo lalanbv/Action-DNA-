@@ -41,7 +41,7 @@ class WorkflowActionsMixin:
 
     依赖 self 属性:
         _model, _canvas, _controller, _selected_node_id, _prop_panel,
-        _clipboard, _paste_offset, _search_bar, _loop_var, _monitor_tree,
+        _clipboard, _paste_offset, _search_bar, loop_controls, _monitor_tree,
         _palette_btn_widgets, _ring_log, _current_zoom, _floating_zoom,
         _debugger, _btn_undo, _btn_redo
     """

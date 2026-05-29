@@ -1,17 +1,35 @@
 """i18n — 多语言支持模块
 
-使用方式:
+使用方式::
+
     from src.utils.i18n import t
     label = t("workflow.title")  # → "工作流编辑器" (中文) / "Workflow Editor" (英文)
     msg = t("workflow.msg.profile_loaded", name="test")  # 支持格式化参数
+
+语言切换通知::
+
+    from src.utils.i18n import on_language_change
+    def on_lang_changed(lang: str) -> None:
+        label.config(text=t("some.key"))
+    on_language_change(on_lang_changed)
 """
+
+from __future__ import annotations
 
 import json
 import logging
 import os
 import sys
+import threading
+from typing import Callable
 
 from src.utils.platform import IS_FROZEN
+
+_logger = logging.getLogger(__name__)
+
+# ── 模块内部状态（线程安全） ──────────────────────────────────
+
+_lock = threading.Lock()
 
 _current_lang: str = ""
 _translations: dict[str, str] = {}
@@ -19,48 +37,58 @@ _fallback_translations: dict[str, str] = {}
 _initialized: bool = False
 _cache: dict[str, dict[str, str]] = {}
 _pending_validations: list[tuple[str, str]] = []
+_observers: list[Callable[[str], None]] = []
+_observer_lock = threading.Lock()
 
-_logger = logging.getLogger(__name__)
+
+# ── 公共 API ──────────────────────────────────────────────────
 
 
 def init(language: str = "zh") -> None:
-    """初始化语言系统"""
+    """初始化语言系统。"""
     global _current_lang, _initialized
-    _current_lang = language
-    _load(language)
-    _initialized = True
-    _flush_pending_validations()
+    with _lock:
+        _current_lang = language
+        _load_unlocked(language)
+        _initialized = True
+        _flush_pending_validations_unlocked()
 
 
 def set_language(language: str) -> None:
-    """切换语言（需要重建 UI 才能生效）"""
+    """切换语言并通知所有观察者。"""
     global _current_lang, _initialized
-    if language == _current_lang and _initialized:
-        return
-    _current_lang = language
-    _load(language)
-    _initialized = True
-    _flush_pending_validations()
+    with _lock:
+        if language == _current_lang and _initialized:
+            return
+        _current_lang = language
+        _load_unlocked(language)
+        _initialized = True
+        _flush_pending_validations_unlocked()
+    _notify_observers(language)
 
 
 def get_language() -> str:
-    """获取当前语言代码"""
+    """获取当前语言代码。"""
     if not _initialized:
         init("zh")
     return _current_lang
 
 
-def t(key: str, **kwargs) -> str:
-    """获取翻译文本，支持 format 参数
+def t(key: str, **kwargs: object) -> str:
+    """获取翻译文本，支持 format 参数。
 
-    查找顺序: 当前语言 → zh 回退 → 返回 key 本身
+    查找顺序: 当前语言 → zh 回退 → 返回 key 本身。
     """
     if not _initialized:
         init("zh")
 
-    text = _translations.get(key)
+    with _lock:
+        translations = _translations
+        fallback = _fallback_translations
+
+    text = translations.get(key)
     if text is None:
-        text = _fallback_translations.get(key, key)
+        text = fallback.get(key, key)
     if kwargs:
         try:
             text = text.format(**kwargs)
@@ -70,14 +98,57 @@ def t(key: str, **kwargs) -> str:
 
 
 def has_key(key: str) -> bool:
-    """检查翻译 key 是否存在"""
+    """检查翻译 key 是否存在。"""
     if not _initialized:
         init("zh")
-    return key in _translations or key in _fallback_translations
+    with _lock:
+        return key in _translations or key in _fallback_translations
+
+
+def all_keys() -> set[str]:
+    """返回当前语言 + 回退语言的所有 key 并集。"""
+    if not _initialized:
+        init("zh")
+    with _lock:
+        return set(_translations) | set(_fallback_translations)
+
+
+def refresh() -> None:
+    """清除缓存并重新加载当前语言（用于热重载翻译文件）。"""
+    with _lock:
+        _cache.clear()
+        _load_unlocked(_current_lang)
+
+
+def on_language_change(callback: Callable[[str], None]) -> None:
+    """注册语言切换回调。callback 接收新语言代码。"""
+    with _observer_lock:
+        _observers.append(callback)
+
+
+def remove_language_observer(callback: Callable[[str], None]) -> None:
+    """移除已注册的语言切换回调。"""
+    with _observer_lock:
+        try:
+            _observers.remove(callback)
+        except ValueError:
+            pass
+
+
+def schedule_validation(key: str, context: str) -> None:
+    """延迟校验 i18n key — 未初始化时暂存，初始化后立即校验。"""
+    with _lock:
+        if _initialized:
+            _check_key(key, context)
+        else:
+            _pending_validations.append((key, context))
+
+
+# ── 内部实现 ──────────────────────────────────────────────────
 
 
 def _read_json(lang: str) -> dict[str, str]:
-    """从 JSON 文件读取翻译，返回字典（带内存缓存）"""
+    """从 JSON 文件读取翻译（带内存缓存）。"""
     cached = _cache.get(lang)
     if cached is not None:
         return cached
@@ -99,16 +170,18 @@ def _read_json(lang: str) -> dict[str, str]:
     return data
 
 
-def schedule_validation(key: str, context: str) -> None:
-    """延迟校验 i18n key — 未初始化时暂存，初始化后立即校验。"""
-    if _initialized:
-        _check_key(key, context)
-    else:
-        _pending_validations.append((key, context))
+def _load_unlocked(lang: str) -> None:
+    """从 JSON 文件加载翻译（调用方持有 _lock）。"""
+    global _translations, _fallback_translations
+    _translations = _read_json(lang)
+    if lang == "zh":
+        _fallback_translations = _translations
+    elif not _fallback_translations:
+        _fallback_translations = _read_json("zh")
 
 
-def _flush_pending_validations() -> None:
-    """处理所有延迟校验。"""
+def _flush_pending_validations_unlocked() -> None:
+    """处理所有延迟校验（调用方持有 _lock）。"""
     global _pending_validations
     for key, context in _pending_validations:
         _check_key(key, context)
@@ -116,15 +189,17 @@ def _flush_pending_validations() -> None:
 
 
 def _check_key(key: str, context: str) -> None:
-    if key and not has_key(key):
+    """校验 key 是否存在。调用方需持有 _lock（或不在锁内时使用 has_key）。"""
+    if key and key not in _translations and key not in _fallback_translations:
         _logger.warning("i18n key %r not found (used by %s)", key, context)
 
 
-def _load(lang: str) -> None:
-    """从 JSON 文件加载翻译"""
-    global _translations, _fallback_translations
-    _translations = _read_json(lang)
-    if lang == "zh":
-        _fallback_translations = _translations
-    elif not _fallback_translations:
-        _fallback_translations = _read_json("zh")
+def _notify_observers(lang: str) -> None:
+    """通知所有观察者语言已切换。"""
+    with _observer_lock:
+        callbacks = list(_observers)
+    for cb in callbacks:
+        try:
+            cb(lang)
+        except Exception:
+            _logger.exception("Language change observer error")

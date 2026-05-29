@@ -18,7 +18,9 @@ from src.panel.components.property_panel import PropertyPanel
 from src.panel.pages.profile_ops_mixin import ProfileOpsMixin
 from src.panel.components.region_bar import RegionBar
 from src.panel.components.status_bar import StatusBar
+from src.panel.components.loop_controls import LoopControls
 from src.panel.components.toolbar import RunControls, ToolbarFrame
+from src.panel.components.editor_toolbar import add_editor_toolbar_sections
 from src.panel.controllers.workflow_controller import WorkflowController
 from src.panel.models.chain_model import ChainModel, ExecutorState
 from src.panel.models.enums import EdgeStyle
@@ -31,7 +33,7 @@ from src.panel.pages.workflow_properties_mixin import WorkflowPropertiesMixin
 from src.panel.pages.workflow_actions_mixin import WorkflowActionsMixin
 from src.panel.pages.workflow_undo_debug_mixin import WorkflowUndoDebugMixin
 from src.panel.profile_manager import ProfileManager
-from src.panel.widgets import LabelButton, apply_theme_recursive, themed_label, themed_checkbutton, themed_separator
+from src.panel.widgets import LabelButton, apply_theme_recursive, themed_dropdown, themed_label, themed_separator
 from src.utils.i18n import t
 
 
@@ -92,20 +94,11 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
     def _build_toolbar(self):
         th = current_theme()
 
-        # ── 第一行：导航 + 配置 + 循环 + 区域 + 运行控制 ──
+        # ── 第一行：通用编辑器工具栏 ──
         self._toolbar = ToolbarFrame(self.frame)
         self._toolbar.pack(fill=tk.X, padx=th.pad_xs, pady=th.pad_xs)
 
-        self._toolbar.make_button(
-            "nav", text=t("common.back"), icon="back",
-            command=self._go_home,
-            tooltip=t("common.back"), shortcut_hint="Esc",
-        )
-        title_label = themed_label(self._toolbar, text=t("workflow.title"), style="section")
-        self._toolbar.add_widget("nav", title_label)
-
-        self._toolbar.add_section("profile")
-        self._profile_bar = ProfileBar(
+        self.profile_bar = ProfileBar(
             self._toolbar,
             on_load=self._on_load_profile,
             on_save=self._on_save_profile,
@@ -114,38 +107,37 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
             on_export=self._on_export_script,
             compact=True,
         )
-        self._profile_bar.add_to_toolbar(self._toolbar, "profile")
-        self._refresh_profiles()
 
-        self._toolbar.add_section("loop")
-        self._loop_var = tk.BooleanVar(value=True)
-        self._loop_var.trace_add("write", self._on_loop_toggled)
-        loop_cb = themed_checkbutton(
-            self._toolbar, text=t("common.infinite_loop"),
-            variable=self._loop_var,
+        self.loop_controls = LoopControls(
+            self._toolbar, on_change=self._on_loop_changed,
         )
-        self._toolbar.add_widget("loop", loop_cb)
 
-        self._toolbar.add_section("region")
-        self._region_bar = RegionBar(
+        self.region_bar = RegionBar(
             self._toolbar,
             on_fullscreen=self._on_fullscreen,
             on_pick_region=self._on_pick_region,
             compact=True,
         )
-        self._region_bar.add_to_toolbar(self._toolbar, "region")
 
-        self._toolbar.add_spacer()
-
-        self._toolbar.add_section("run")
-        self._run_controls = RunControls(
+        self.run_controls = RunControls(
             self._toolbar,
             on_start=self._on_start,
             on_pause=self._on_pause,
             on_resume=self._on_resume,
             on_stop=self._on_stop,
         )
-        self._run_controls.add_to_toolbar(self._toolbar, "run")
+
+        add_editor_toolbar_sections(
+            self._toolbar,
+            title_text=t("workflow.title"),
+            on_back=self._go_home,
+            profile_bar=self.profile_bar,
+            loop_controls=self.loop_controls,
+            region_bar=self.region_bar,
+            run_controls=self.run_controls,
+        )
+
+        self._refresh_profiles()
 
         # ── 分隔线 ──
         themed_separator(self.frame, orient=tk.HORIZONTAL).pack(fill=tk.X)
@@ -167,21 +159,19 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         )
         self._btn_redo.configure(state=tk.DISABLED)
 
-        self._edge_style_map = {
-            EdgeStyle.BEZIER: t("workflow.edge_style.bezier"),
-            EdgeStyle.ORTHOGONAL: t("workflow.edge_style.orthogonal"),
-            EdgeStyle.STRAIGHT: t("workflow.edge_style.straight"),
-        }
-        self._edge_style_reverse = {v: k for k, v in self._edge_style_map.items()}
-        self._edge_style_var = tk.StringVar(value=self._edge_style_map[EdgeStyle.BEZIER])
+        self._edge_style_options = [
+            (EdgeStyle.BEZIER.name, "workflow.edge_style.bezier"),
+            (EdgeStyle.ORTHOGONAL.name, "workflow.edge_style.orthogonal"),
+            (EdgeStyle.STRAIGHT.name, "workflow.edge_style.straight"),
+        ]
+        self._edge_style_var = tk.StringVar(value=EdgeStyle.BEZIER.name)
         self._toolbar2.add_section("edge_style")
-        edge_combo = ttk.Combobox(
-            self._toolbar2, textvariable=self._edge_style_var,
-            state="readonly", width=10,
-            values=list(self._edge_style_map.values()),
+        self._edge_style_dropdown = themed_dropdown(
+            self._toolbar2, options=self._edge_style_options,
+            value=EdgeStyle.BEZIER.name, state="readonly", width=12,
+            command=lambda _: self._on_edge_style_changed(),
         )
-        self._toolbar2.add_widget("edge_style", edge_combo)
-        self._edge_style_var.trace_add("write", lambda *_: self._on_edge_style_changed())
+        self._toolbar2.add_widget("edge_style", self._edge_style_dropdown)
 
         self._btn_palette = self._toolbar2.make_toggle_button(
             "view_toggle", text=t("workflow.toolbar.palette"), icon="palette",
@@ -261,7 +251,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         if self._is_in_paned(self._paned, self._palette_outer):
             self._paned.forget(self._palette_outer)
         if mode == "full":
-            self._palette_outer.configure(width=200)
+            self._palette_outer.configure(width=current_theme().panel_width_left)
             self._paned.add(self._palette_outer, before=self._canvas, stretch="never")
             self._palette_labels_visible(True)
         self._palette_mode = mode
@@ -290,6 +280,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         btn: LabelButton,
         visible: bool,
         size_kw: dict,
+        minsize: int = 0,
     ) -> bool:
         actually_in = self._is_in_paned(paned, widget)
         if visible and actually_in:
@@ -297,7 +288,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
             result = False
         elif not visible and not actually_in:
             widget.configure(**size_kw)
-            paned.add(widget, stretch="never")
+            paned.add(widget, stretch="never", minsize=minsize)
             result = True
         else:
             result = not visible
@@ -309,6 +300,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._props_visible = self._toggle_panel(
             self._paned, self._prop_panel, self._btn_props,
             self._props_visible, {"width": current_theme().panel_width_right},
+            minsize=150,
         )
         self.frame.after(150, self._reposition_minimap)
 
@@ -320,7 +312,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         """切换底部日志面板。"""
         self._log_visible = self._toggle_panel(
             self._vpaned, self._log_container, self._btn_log,
-            self._log_visible, {"height": 180},
+            self._log_visible, {"height": 180}, minsize=60,
         )
         self.frame.after(100, self._reposition_minimap)
 
@@ -366,17 +358,19 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         sm = scale_manager()
 
         self._vpaned = tk.PanedWindow(
-            self.frame, orient=tk.VERTICAL, opaqueresize=False,
-            sashwidth=sm.s(4), sashrelief=tk.FLAT, bd=0,
-            bg=theme.bg_primary,
+            self.frame, orient=tk.VERTICAL, opaqueresize=True,
+            sashwidth=max(sm.s(6), 4), sashrelief=tk.FLAT, bd=0,
+            bg=theme.separator_color,
+            sashcursor="sb_v_double_arrow",
         )
         self._vpaned.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
 
         upper = tk.Frame(self._vpaned, bg=theme.bg_primary)
         self._paned = tk.PanedWindow(
-            upper, orient=tk.HORIZONTAL, opaqueresize=False,
-            sashwidth=sm.s(4), sashrelief=tk.FLAT, bd=0,
-            bg=theme.bg_primary,
+            upper, orient=tk.HORIZONTAL, opaqueresize=True,
+            sashwidth=max(sm.s(6), 4), sashrelief=tk.FLAT, bd=0,
+            bg=theme.separator_color,
+            sashcursor="sb_h_double_arrow",
         )
         self._paned.pack(fill=tk.BOTH, expand=True)
 
@@ -384,14 +378,15 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._canvas = GraphCanvas(self._paned, self._on_canvas_event)
 
         self._prop_panel = PropertyPanel(
-            self._paned, width=theme.panel_width_right, title="",
+            self._paned, width=theme.panel_width_right,
+            title=t("workflow.properties.title"),
         )
 
-        self._paned.add(self._canvas, stretch="always")
+        self._paned.add(self._canvas, stretch="always", minsize=200)
 
         if self._palette_mode == "full":
-            self._palette_outer.configure(width=200)
-            self._paned.add(self._palette_outer, before=self._canvas, stretch="never")
+            self._palette_outer.configure(width=current_theme().panel_width_left)
+            self._paned.add(self._palette_outer, before=self._canvas, stretch="never", minsize=80)
 
         self._floating_zoom = FloatingZoomControls(
             parent=self._canvas,
@@ -406,10 +401,10 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._log_container = tk.Frame(self._vpaned, bg=theme.panel_bg, height=180)
         self._log_container.pack_propagate(False)
 
-        self._vpaned.add(upper, stretch="always")
+        self._vpaned.add(upper, stretch="always", minsize=200)
 
         if self._log_visible:
-            self._vpaned.add(self._log_container, stretch="never")
+            self._vpaned.add(self._log_container, stretch="never", minsize=60)
 
         self._bind_panel_shortcuts()
 
@@ -439,8 +434,11 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
 
 
     def _on_edge_style_changed(self):
-        display = self._edge_style_var.get()
-        internal = self._edge_style_reverse.get(display, EdgeStyle.BEZIER)
+        val = self._edge_style_dropdown.get_value()
+        try:
+            internal = EdgeStyle[val]
+        except KeyError:
+            internal = EdgeStyle.BEZIER
         self._canvas.set_edge_style(internal)
 
     # ── 配置文件操作 ──────────────────────────────────────
@@ -451,10 +449,10 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
 
     def _refresh_profiles(self):
         profiles = self._controller.list_profiles()
-        self._profile_bar.refresh_list(profiles, self._model.current_profile_name)
+        self.profile_bar.refresh_list(profiles, self._model.current_profile_name)
 
     def _get_selected_profile_name(self):
-        return self._profile_bar.get_selected()
+        return self.profile_bar.get_selected()
 
     def _ask_string(self, title, prompt):
         result = simpledialog.askstring(title, prompt, parent=self.frame)
@@ -501,7 +499,8 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
 
     def _on_graph_loaded(self, **_kwargs):
         has_loop = find_loop_edge(self._model.graph) is not None
-        self._loop_var.set(has_loop)
+        loop_count = self._model.graph.loop_count
+        self.loop_controls.set_from_model(has_loop, loop_count if has_loop else 0)
         self._canvas.render_graph(self._model.graph)
         self._refresh_monitor_list()
         self._append_log(f"{t('workflow.msg.graph_loaded')}: {self._model.graph.describe()}")
@@ -526,7 +525,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         if not running:
             self._canvas.highlight_node(None)
 
-        self._run_controls.set_state(state or ExecutorState.IDLE)
+        self.run_controls.set_state(state or ExecutorState.IDLE)
         self._status_bar.set_status_dot(state or ExecutorState.IDLE)
 
         self._status_bar.set_center(t(STATE_I18N.get(state, "")))
@@ -555,9 +554,9 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
 
         # 2. 共享组件主题（_toolbar 由 BasePage.apply_theme 处理）
         for comp in (
-            self._toolbar2, self._profile_bar,
-            self._region_bar, self._run_controls, self._status_bar,
-            self._monitor_widget, self._prop_panel,
+            self._toolbar2, self.profile_bar,
+            self.region_bar, self.run_controls, self.loop_controls,
+            self._status_bar, self._monitor_widget, self._prop_panel,
         ):
             if hasattr(comp, "apply_theme"):
                 comp.apply_theme()
@@ -568,7 +567,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         for widget_name in ("_vpaned", "_paned"):
             widget = getattr(self, widget_name, None)
             if widget:
-                widget.configure(bg=theme.bg_primary)
+                widget.configure(bg=theme.separator_color)
 
         # 4. 面板递归主题
         for widget_name in ("_palette_outer", "_log_container"):
@@ -650,7 +649,8 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         if result.graph_copied:
             self._canvas.render_graph(self._model.graph)
             has_loop = find_loop_edge(self._model.graph) is not None
-            self._loop_var.set(has_loop)
+            loop_count = self._model.graph.loop_count
+            self.loop_controls.set_from_model(has_loop, loop_count if has_loop else 0)
         if result.state != ExecutorState.IDLE:
             self._on_executor_state(state=result.state)
             self._refresh_monitor_list()

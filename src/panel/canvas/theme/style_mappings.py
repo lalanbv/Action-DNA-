@@ -12,7 +12,7 @@ from src.panel.canvas.theme.color_utils import hex_to_rgb
 
 
 LabelStyle = Literal["title", "section", "subtitle", "dialog_title", "body", "small", "mono"]
-ButtonStyle = Literal["primary", "secondary", "danger"]
+ButtonStyle = Literal["primary", "secondary", "danger", "ghost"]
 
 _STYLE_FONTS: dict[str, str] = {
     "title": "font_page_title",
@@ -24,10 +24,11 @@ _STYLE_FONTS: dict[str, str] = {
     "mono": "font_mono",
 }
 
-_BUTTON_STYLES: dict[ButtonStyle, dict[str, str]] = {
+_BUTTON_STYLES: dict[str, dict[str, str]] = {
     "primary": {"bg_prop": "accent_blue", "fg_prop": "text_on_accent"},
     "secondary": {"bg_prop": "btn_bg", "fg_prop": "text_primary"},
     "danger": {"bg_prop": "danger_color", "fg_prop": "text_on_accent"},
+    "ghost": {"bg_prop": "page_bg", "fg_prop": "text_primary"},
 }
 
 
@@ -52,3 +53,14 @@ def derive_hover_bg(hex_color: str, factor: float = 0.18) -> str:
             min(255, int(c + (255 - c) * factor)) for c in (r, g, b)
         )
     return f"#{nr:02x}{ng:02x}{nb:02x}"
+
+
+# ── 工具栏按钮统一配置 ──
+
+TOOLBAR_BTN_CONFIG: dict[str, int | str] = {
+    "padx": 8,
+    "pady": 4,
+    "font_style": "body",
+    "min_touch_w": 36,
+    "min_touch_h": 28,
+}

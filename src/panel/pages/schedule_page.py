@@ -1,7 +1,7 @@
 """调度管理页面 — 调度列表 + 启停控制 UI"""
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 
 from src.core.config import (
     ScheduleEntryConfig,
@@ -15,6 +15,7 @@ from src.panel.pages.page_registry import PAGE_HOME, register_page
 from src.panel.widgets import (
     themed_button,
     themed_checkbutton,
+    themed_dropdown,
     themed_entry,
     themed_frame,
     themed_label,
@@ -23,7 +24,16 @@ from src.panel.widgets import (
 )
 from src.utils.i18n import t
 
-_SCHEDULE_TYPES = ["once", "interval", "daily", "weekly"]
+_SCHEDULE_TYPE_OPTIONS = [
+    ("once", "schedule.type.once"),
+    ("interval", "schedule.type.interval"),
+    ("daily", "schedule.type.daily"),
+    ("weekly", "schedule.type.weekly"),
+]
+
+_WEEKLY_DAY_OPTIONS = [
+    (str(i), str(i)) for i in range(7)
+]
 
 
 @register_page("schedule", label_i18n=SCHEDULE_TITLE, desc_i18n=SCHEDULE_DESC, icon="⏰", category="settings")
@@ -151,7 +161,6 @@ class SchedulePage(BasePage):
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         type_internal = entry["schedule_type"]
-        var_type = tk.StringVar(value=t(f"schedule.type.{type_internal}"))
         var_profile = tk.StringVar(value=entry["profile_name"])
         var_interval = tk.IntVar(value=entry["interval_seconds"])
         var_daily_time = tk.StringVar(value=entry["daily_time"])
@@ -172,21 +181,17 @@ class SchedulePage(BasePage):
             r += 1
 
         def _build_type_combo():
-            combo = ttk.Combobox(
-                frame, textvariable=var_type, state="readonly",
-                values=[t(f"schedule.type.{v}") for v in _SCHEDULE_TYPES], width=12,
-            )
+            nonlocal type_internal
 
-            def _on_type_selected(_event=None):
+            def _on_type_change(val):
                 nonlocal type_internal
-                display = var_type.get()
-                for val in _SCHEDULE_TYPES:
-                    if t(f"schedule.type.{val}") == display:
-                        type_internal = val
-                        break
+                type_internal = val
 
-            combo.bind("<<ComboboxSelected>>", _on_type_selected)
-            return combo
+            return themed_dropdown(
+                frame, options=_SCHEDULE_TYPE_OPTIONS,
+                value=type_internal, state="readonly", width=12,
+                command=_on_type_change,
+            )
 
         _add_field(
             t("schedule.type"),
@@ -208,9 +213,10 @@ class SchedulePage(BasePage):
         )
         _add_field(
             t("schedule.weekly_day"),
-            lambda **_: ttk.Combobox(
-                frame, textvariable=var_weekly_day, state="readonly",
-                values=list(range(7)), width=5,
+            lambda **_: themed_dropdown(
+                frame, options=_WEEKLY_DAY_OPTIONS,
+                value=str(entry["weekly_day"]), state="readonly", width=5,
+                i18n=False, command=lambda v: var_weekly_day.set(int(v)),
             ),
         )
         _add_field(

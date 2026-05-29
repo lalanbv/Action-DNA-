@@ -53,15 +53,18 @@ class TestThemedButton:
     def test_creates_button(self):
         btn = themed_button(None, "Click me")
         assert btn.text() == "Click me"
-        assert btn.styleSheet()
+        # Secondary buttons rely on global QSS, no inline style needed
+        assert btn.property("dnaBtnStyle") is None or btn.property("dnaBtnStyle") == ""
 
     def test_primary_style(self):
         btn = themed_button(None, "OK", style="primary")
-        assert "accent_blue" not in btn.styleSheet() or "background" in btn.styleSheet()
+        assert btn.styleSheet()
+        assert btn.property("dnaBtnStyle") == "primary"
 
     def test_danger_style(self):
         btn = themed_button(None, "Delete", style="danger")
         assert btn.styleSheet()
+        assert btn.property("dnaBtnStyle") == "danger"
 
     def test_command_connected(self):
         called = [False]
@@ -84,7 +87,6 @@ class TestThemedEntry:
     def test_creates_entry(self):
         e = themed_entry(None, placeholder="type here")
         assert e.placeholderText() == "type here"
-        assert e.styleSheet()
 
     def test_initial_text(self):
         e = themed_entry(None, text="initial")
@@ -127,14 +129,12 @@ class TestThemedLabelframe:
     def test_creates_group(self):
         gb = themed_labelframe(None, "Section")
         assert gb.title() == "Section"
-        assert gb.styleSheet()
 
 
 class TestThemedTreeview:
     def test_creates_tree(self):
         tree = themed_treeview(None, columns=["Name", "Value"])
         assert tree.headerItem().text(0) == "Name"
-        assert tree.styleSheet()
 
     def test_alternating_colors(self):
         tree = themed_treeview(None)

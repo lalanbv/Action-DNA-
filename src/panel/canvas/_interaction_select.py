@@ -159,6 +159,7 @@ class SelectMixin:
         self._drag_node_id = info[KEY_NODE_ID]
         self._drag_start_sx = event.x
         self._drag_start_sy = event.y
+        self._drag_actually_moved = False
 
         self._canvas.configure(cursor="fleur")
 

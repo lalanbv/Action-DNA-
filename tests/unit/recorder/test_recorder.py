@@ -88,7 +88,7 @@ class TestOnMouseEvent:
         r._is_recording = True
         r._last_event_time = 1.0
         r._on_mouse_event("mouse_move", 100, 100, "", 1.0, 0.0)
-        r._on_mouse_event("mouse_move", 102, 102, "", 1.0, 0.0)  # 距离 < 5
+        r._on_mouse_event("mouse_move", 100, 100, "", 1.0, 0.0)  # 距离 = 0，应去重
         assert r.event_count == 1
 
     def test_keep_distant_move(self):

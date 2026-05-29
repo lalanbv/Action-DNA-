@@ -15,7 +15,7 @@ from src.core.editor.commands.reconnect_edge_command import ReconnectEdgeCommand
 from src.core.editor.commands.edit_property_command import EditPropertyCommand
 from src.core.editor.commands.edit_edge_property_command import EditEdgePropertyCommand
 from src.core.editor.commands.composite_command import CompositeCommand
-from src.core.flow import ensure_loop_edge, remove_loop_edge
+from src.core.editor.commands.loop_command import LoopChangedCommand
 from src.core.logger import log
 from src.utils.i18n import t
 
@@ -125,6 +125,13 @@ class WorkflowUndoDebugMixin:
                 self._canvas.update_node_visual(cmd.node_id)
             return
 
+        if isinstance(cmd, LoopChangedCommand):
+            graph = self._model.graph
+            if hasattr(self, 'loop_controls'):
+                self.loop_controls.set_from_model(graph.loop, graph.loop_count)
+            self._canvas.render_graph(graph)
+            return
+
         self._canvas.render_graph(graph)
 
     def _on_undo_state_changed(self):
@@ -204,8 +211,8 @@ class WorkflowUndoDebugMixin:
 
     def _on_start(self):  # pylint: disable=broad-exception-caught
         try:
-            self._model.graph.loop = self._loop_var.get()
-            self._model.graph.loop_count = 0 if self._loop_var.get() else 1
+            self._model.graph.loop = self.loop_controls.loop
+            self._model.graph.loop_count = self.loop_controls.loop_count
             self._controller.start_chain()
         except Exception as e:
             from tkinter import messagebox
@@ -256,9 +263,9 @@ class WorkflowUndoDebugMixin:
 
     # ── 循环边控制 ──────────────────────────────────────────
 
-    def _on_loop_toggled(self, *_):
-        if not self._loop_var.get():
-            remove_loop_edge(self._model.graph)
-        else:
-            ensure_loop_edge(self._model.graph)
-        self._canvas.render_graph(self._model.graph)
+    def _on_loop_changed(self) -> None:
+        """LoopControls 模式变化回调。"""
+        loop = self.loop_controls.loop
+        loop_count = self.loop_controls.loop_count
+        self._controller.update_loop(loop, loop_count)
+        # render_graph is already called by _on_undo_state_changed

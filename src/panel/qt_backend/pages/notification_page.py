@@ -96,13 +96,10 @@ class QtNotificationPage(QtBasePage):
         lbl = themed_label(self._content, text=t("notification.channels"), style="subtitle")
         section_layout.addWidget(lbl)
 
-        cb_style = f"color: {th.text_primary};"
         self._cb_system = QCheckBox(t("notification.channel.system"))
-        self._cb_system.setStyleSheet(cb_style)
         section_layout.addWidget(self._cb_system)
 
         self._cb_sound = QCheckBox(t("notification.channel.sound"))
-        self._cb_sound.setStyleSheet(cb_style)
         section_layout.addWidget(self._cb_sound)
 
         self._content_layout.addWidget(section)
@@ -113,54 +110,29 @@ class QtNotificationPage(QtBasePage):
         section_layout.setContentsMargins(sm.s(th.pad_md), sm.s(th.pad_sm), sm.s(th.pad_md), sm.s(th.pad_sm))
 
         self._cb_webhook = QCheckBox(t("notification.channel.webhook"))
-        self._cb_webhook.setStyleSheet(f"color: {th.text_primary};")
         section_layout.addWidget(self._cb_webhook)
-
-        entry_style = f"""
-            QLineEdit {{
-                background-color: {th.input_bg}; color: {th.text_primary};
-                border: 1px solid {th.border_default}; border-radius: {sm.s(3)}px;
-                padding: {sm.s(3)}px {sm.s(6)}px;
-            }}
-        """
-        combo_style = f"""
-            QComboBox {{
-                background-color: {th.input_bg}; color: {th.text_primary};
-                border: 1px solid {th.border_default}; border-radius: {sm.s(3)}px;
-                padding: {sm.s(3)}px {sm.s(6)}px; min-width: {sm.s(120)}px;
-            }}
-        """
-        label_style = f"color: {th.text_primary};"
 
         form = QFormLayout()
         form.setSpacing(sm.s(6))
 
         url_field = QLabel(t("notification.webhook.url"))
-        url_field.setStyleSheet(label_style)
         self._webhook_url_entry = QLineEdit()
-        self._webhook_url_entry.setStyleSheet(entry_style)
         form.addRow(url_field, self._webhook_url_entry)
 
         type_field = QLabel(t("notification.webhook.type"))
-        type_field.setStyleSheet(label_style)
         self._webhook_type_combo = QComboBox()
         for val in _WEBHOOK_TYPE_VALUES:
             self._webhook_type_combo.addItem(t(f"notification.webhook.type.{val}"), val)
-        self._webhook_type_combo.setStyleSheet(combo_style)
         form.addRow(type_field, self._webhook_type_combo)
 
         secret_field = QLabel(t("notification.webhook.secret"))
-        secret_field.setStyleSheet(label_style)
         self._webhook_secret_entry = QLineEdit()
-        self._webhook_secret_entry.setStyleSheet(entry_style)
         form.addRow(secret_field, self._webhook_secret_entry)
 
         timeout_field = QLabel(t("notification.webhook.timeout"))
-        timeout_field.setStyleSheet(label_style)
         self._webhook_timeout_spin = QSpinBox()
         self._webhook_timeout_spin.setRange(1, 30)
         self._webhook_timeout_spin.setValue(5)
-        self._webhook_timeout_spin.setStyleSheet(entry_style)
         form.addRow(timeout_field, self._webhook_timeout_spin)
 
         section_layout.addLayout(form)
@@ -221,12 +193,10 @@ class QtNotificationPage(QtBasePage):
                     break
 
             info_lbl = QLabel(trigger_label)
-            info_lbl.setStyleSheet(f"color: {th.text_primary};")
             row_layout.addWidget(info_lbl, 1)
 
             cb = QCheckBox(t("common.enabled"))
             cb.setChecked(rule_data["enabled"])
-            cb.setStyleSheet(f"color: {th.text_primary};")
             cb.toggled.connect(lambda checked, idx=i: self._toggle_rule(idx, checked))
             row_layout.addWidget(cb)
 
@@ -363,6 +333,11 @@ class QtNotificationPage(QtBasePage):
     def _save_and_back(self) -> None:
         self._save_current_config()
         self.app.navigate_to(PAGE_HOME)
+
+    def apply_theme(self) -> None:
+        super().apply_theme()
+        if hasattr(self, "_rule_rows"):
+            self._render_rules()
 
     def destroy_page(self) -> None:
         self._save_current_config()

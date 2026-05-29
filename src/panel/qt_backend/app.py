@@ -128,6 +128,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._register_lightweight_services()
 
         # 共享服务状态
+        self._services_ready = False
         self._pulse_state: bool = False
         self._pulse_timer: QTimer | None = None
         self._executor_source_page: str | None = None
@@ -251,6 +252,8 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._setup_monitor_events()
         self._start_monitor_poll()
 
+        self._services_ready = True
+
     def _setup_monitor_events(self) -> None:
         from src.core.events.events import MonitorTriggeredEvent
         self.event_bus.subscribe(MonitorTriggeredEvent, self._on_monitor_triggered)
@@ -273,13 +276,26 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._status_label.setStyleSheet(f"color: {color}; background: transparent;")
 
     def _on_theme_changed(self) -> None:
+        """主题切换时重新配置全局样式，并强制所有页面（含缓存）更新。"""
         self._apply_theme()
         self._last_resolved = resolved_theme_mode()
         th = current_theme()
         self._set_status_label_color(th.text_muted)
         self._status_dot.set_color(th.status_ready)
-        if self._current_page_id:
-            self.navigate_to(self._current_page_id)
+
+        # Force update cached pages too (they won't get callbacks since not visible)
+        for page in self._page_cache.values():
+            if hasattr(page, "apply_theme"):
+                try:
+                    page.apply_theme()
+                except Exception:
+                    pass
+
+        # Force update status bar background
+        if hasattr(self, "_status_bar") and self._status_bar is not None:
+            self._status_bar.setStyleSheet(
+                f"background-color: {th.bg_surface}; border-top: 1px solid {th.border_default};"
+            )
 
     def _start_system_theme_poller(self) -> None:
         self._sys_theme_timer = QTimer(self)
@@ -397,6 +413,10 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             page = self._page_cache.pop(page_id)
             self._stack.addWidget(page)
             self._stack.setCurrentWidget(page)
+            if hasattr(page, "apply_theme"):
+                page.apply_theme()
+            if hasattr(page, "on_enter"):
+                page.on_enter(**kwargs)
             self._current_page_id = page_id
             self.setWindowTitle(f"Action<DNA> — {page_id}")
             return
@@ -476,6 +496,44 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         return self._executor_source_page
 
     # ── 生命周期 ──
+
+    def schedule_restart(self) -> None:
+        """停止独占资源 → 启动新进程 → 终止当前进程。"""
+        self._stop_services()
+        try:
+            from src.utils.restart import restart_app
+            restart_app()
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("重启失败，尝试恢复服务")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(None, t("app.title"), t("settings.restart_failed"))
+            self._services_ready = True
+
+    def _stop_services(self) -> None:
+        """按正确顺序停止所有服务，释放独占资源防止新旧进程冲突。
+
+        顺序：回调/轮询 → 热键 → 执行器 → 插件 → 截图 → 缓存
+        """
+        self._unregister_theme_callback()
+        if self._sys_theme_timer:
+            self._sys_theme_timer.stop()
+            self._sys_theme_timer = None
+        if self._monitor_timer:
+            self._monitor_timer.stop()
+            self._monitor_timer = None
+        self._stop_pulse()
+        if self.hotkey_manager:
+            self.hotkey_manager.shutdown()
+        if self.executor:
+            self.executor.stop()
+        if self.plugin_loader:
+            self.plugin_loader.stop_watcher()
+            self.plugin_loader.unload_all()
+        if self.capture:
+            self.capture.close()
+        if self.matcher:
+            self.matcher.clear_cache()
+        self._services_ready = False
 
     def run(self) -> None:
         """显示窗口并启动事件循环。"""

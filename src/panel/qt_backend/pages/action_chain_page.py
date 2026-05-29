@@ -10,9 +10,9 @@ import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QHBoxLayout, QHeaderView,
+    QComboBox, QFrame, QHBoxLayout, QHeaderView,
     QLabel, QPlainTextEdit, QPushButton,
-    QSizePolicy,
+    QScrollArea, QSizePolicy,
     QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -23,7 +23,7 @@ from src.core.events.event_names import EventName
 from src.core.step_types import STEP_CLASSES
 from src.panel.canvas.theme import current_theme, node_fill_color
 from src.panel.pages.page_registry import PAGE_HOME
-from src.panel.components.palette_data import ACTION_PALETTE
+from src.panel.components.palette_data import ACTION_PALETTE, action_accent
 from src.panel.controllers.action_chain_controller import ActionChainController
 from src.panel.models.chain_model import ChainModel
 from src.panel.profile_manager import ProfileManager
@@ -74,11 +74,45 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         self._ring_log = RingBufferLog(capacity=1000)
         self._selected_step_idx: int | None = None
 
+    # ── 样式辅助 ──────────────────────────────────────────────
+
+    @staticmethod
+    def _toolbar_btn_style() -> str:
+        th = current_theme()
+        return (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"padding: 4px 8px; color: {th.text_primary}; }}"
+            f"QPushButton:hover {{ background: {th.bg_surface_hover}; "
+            f"border-radius: 3px; }}"
+        )
+
+    @staticmethod
+    def _make_vsep() -> QFrame:
+        th = current_theme()
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet(f"color: {th.border_default};")
+        return sep
+
+    @staticmethod
+    def _styled_panel() -> tuple[QFrame, QVBoxLayout]:
+        th = current_theme()
+        sm = qt_scale_manager()
+        frame = QFrame()
+        frame.setStyleSheet(
+            f"QFrame {{ background-color: {th.panel_bg}; "
+            f"border: 1px solid {th.border_default}; border-radius: 4px; }}"
+        )
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(sm.s(4), sm.s(4), sm.s(4), sm.s(4))
+        return frame, layout
+
     # ── 工具栏 ──────────────────────────────────────────────
 
     def _build_toolbar(self):
         th = current_theme()
         sm = qt_scale_manager()
+        btn_style = self._toolbar_btn_style()
 
         toolbar = QWidget()
         toolbar.setObjectName("actionChainToolbar")
@@ -89,13 +123,6 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(2)
 
-        btn_style = (
-            f"QPushButton {{ background: transparent; border: none; "
-            f"padding: 4px 8px; color: {th.text_primary}; }}"
-            f"QPushButton:hover {{ background: {th.bg_surface_hover}; "
-            f"border-radius: 3px; }}"
-        )
-
         def _tb(text: str, handler) -> QPushButton:
             b = QPushButton(text)
             b.setStyleSheet(btn_style)
@@ -104,11 +131,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
         layout.addWidget(_tb(t("common.back"), self._go_home))
         layout.addWidget(self._make_label(t("chain.title"), bold=True))
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet(f"color: {th.border_default};")
-        layout.addWidget(sep)
+        layout.addWidget(self._make_vsep())
 
         # 配置文件
         self._profile_combo = QComboBox()
@@ -128,32 +151,17 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         ]:
             layout.addWidget(_tb(label, handler))
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setStyleSheet(f"color: {th.border_default};")
-        layout.addWidget(sep2)
+        layout.addWidget(self._make_vsep())
 
         # 区域
         layout.addWidget(_tb(t("chain.region.fullscreen"), self._on_fullscreen))
         layout.addWidget(_tb(t("chain.region.pick"), self._on_pick_region))
 
-        sep3 = QFrame()
-        sep3.setFrameShape(QFrame.Shape.VLine)
-        sep3.setStyleSheet(f"color: {th.border_default};")
-        layout.addWidget(sep3)
+        layout.addWidget(self._make_vsep())
 
-        # 循环
-        self._loop_cb = QCheckBox(t("common.infinite_loop"))
-        self._loop_cb.setChecked(True)
-        layout.addWidget(self._loop_cb)
-        self._loop_count_spin = QSpinBox()
-        self._loop_count_spin.setRange(0, 9999)
-        self._loop_count_spin.setValue(0)
-        self._loop_count_spin.setVisible(not self._loop_cb.isChecked())
-        layout.addWidget(self._loop_count_spin)
-        self._loop_cb.stateChanged.connect(
-            lambda: self._loop_count_spin.setVisible(not self._loop_cb.isChecked()),
-        )
+        # 循环 — 三模式下拉 + 可选次数输入，与 tkinter LoopControls 对齐
+        self._build_loop_controls(toolbar, th, sm)
+        layout.addWidget(self._loop_container)
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -168,10 +176,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         ]:
             layout.addWidget(_tb(label, handler))
 
-        sep4 = QFrame()
-        sep4.setFrameShape(QFrame.Shape.VLine)
-        sep4.setStyleSheet(f"color: {th.border_default};")
-        layout.addWidget(sep4)
+        layout.addWidget(self._make_vsep())
 
         layout.addWidget(_tb(t("chain.clear"), self._on_clear_steps))
 
@@ -207,9 +212,9 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # 左侧：步骤面板
+        # 左侧：步骤面板（可拖拽调整宽度）
         self._palette_widget = self._build_palette_panel()
-        self._palette_widget.setFixedWidth(sm.s(160))
+        self._palette_widget.setMinimumWidth(sm.s(100))
 
         # 中央：步骤列表 + 监控器 + 日志
         center = QWidget()
@@ -220,9 +225,9 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         self._build_monitors_section(center_layout)
         self._build_log_viewer(center_layout)
 
-        # 右侧：属性面板
+        # 右侧：属性面板（可拖拽调整宽度）
         self._props_widget = QWidget()
-        self._props_widget.setFixedWidth(sm.s(240))
+        self._props_widget.setMinimumWidth(sm.s(150))
         self._props_layout = QVBoxLayout(self._props_widget)
         self._props_layout.setContentsMargins(4, 4, 4, 4)
         self._show_empty_props()
@@ -234,6 +239,11 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
 
+        # 设置初始面板宽度分配
+        palette_w = sm.s(th.panel_width_left if hasattr(th, 'panel_width_left') else 200)
+        props_w = sm.s(th.panel_width_right if hasattr(th, 'panel_width_right') else 260)
+        splitter.setSizes([palette_w, max(400, splitter.width() - palette_w - props_w), props_w])
+
         self.layout().addWidget(splitter)
         self._splitter = splitter
 
@@ -243,42 +253,48 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         th = current_theme()
         sm = qt_scale_manager()
         widget = QWidget()
-        layout = QVBoxLayout(widget)
+        outer_layout = QVBoxLayout(widget)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        header = themed_section_header(widget, t("workflow.palette.section_action"))
+        outer_layout.addWidget(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setStyleSheet(f"background-color: {th.panel_bg};")
+
+        scroll_content = QWidget()
+        layout = QVBoxLayout(scroll_content)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(2)
 
-        header = themed_section_header(widget, t("workflow.palette.section_action"))
-        layout.addWidget(header)
-
         self._palette_buttons: list[QPushButton] = []
-        color = node_fill_color("ACTION")
+        self._palette_action_types: list[str] = []
         for action_type, i18n_key in ACTION_PALETTE:
+            accent_token = action_accent(action_type)
+            color = getattr(th, accent_token, th.accent_blue)
             btn = themed_palette_button(
-                widget, t(i18n_key), color,
+                scroll_content, t(i18n_key), color,
                 command=lambda at=action_type, ik=i18n_key: self._add_step_dialog(at, t(ik)),
             )
             layout.addWidget(btn)
             self._palette_buttons.append(btn)
+            self._palette_action_types.append(action_type)
 
         layout.addStretch()
+        scroll.setWidget(scroll_content)
+        outer_layout.addWidget(scroll)
         return widget
 
     # ── 步骤列表 ──────────────────────────────────────────
 
     def _build_step_list(self, parent_layout: QVBoxLayout):
-        th = current_theme()
         sm = qt_scale_manager()
+        th = current_theme()
 
-        frame = QFrame()
-        frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {th.panel_bg};
-                border: 1px solid {th.border_default};
-                border-radius: 4px;
-            }}
-        """)
-        frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(sm.s(4), sm.s(4), sm.s(4), sm.s(4))
+        frame, frame_layout = self._styled_panel()
 
         title = QLabel(t("chain.steps"))
         title.setStyleSheet(f"color: {th.text_primary}; font-weight: bold; font-size: {sm.s(10)}px;")
@@ -309,16 +325,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         th = current_theme()
         sm = qt_scale_manager()
 
-        frame = QFrame()
-        frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {th.panel_bg};
-                border: 1px solid {th.border_default};
-                border-radius: 4px;
-            }}
-        """)
-        frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(sm.s(4), sm.s(4), sm.s(4), sm.s(4))
+        frame, frame_layout = self._styled_panel()
 
         title = QLabel(t("chain.tab.monitors"))
         title.setStyleSheet(f"color: {th.text_primary}; font-weight: bold; font-size: {sm.s(10)}px;")
@@ -415,6 +422,104 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         self.subscribe(EventName.REGION_CHANGED, self._on_region_changed)
 
     # ── 步骤操作 ──────────────────────────────────────────
+
+    # ── 循环控件 ──────────────────────────────────────────
+
+    _LOOP_SINGLE = "single"
+    _LOOP_INFINITE = "infinite"
+    _LOOP_FINITE = "finite"
+
+    def _build_loop_controls(self, parent: QWidget, th, sm) -> None:
+        """构建三模式循环控件：单次执行 / 无限循环 / 指定次数。"""
+        container = QFrame(parent)
+        container.setObjectName("loopControlFrame")
+        lay = QHBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(sm.s(4))
+
+        combo_style = f"""
+            QComboBox {{
+                background-color: {th.input_bg};
+                color: {th.text_primary};
+                border: 1px solid {th.border_default};
+                border-radius: 3px;
+                padding: 1px {sm.s(4)}px;
+                font-size: {sm.s(10)}px;
+                min-width: {sm.s(80)}px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: {sm.s(16)}px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {th.input_bg};
+                color: {th.text_primary};
+                border: 1px solid {th.border_default};
+                selection-background-color: {th.accent_blue};
+                selection-color: {th.text_on_accent};
+            }}
+        """
+
+        self._loop_combo = QComboBox()
+        self._loop_combo.setObjectName("loopCombo")
+        self._loop_combo.setStyleSheet(combo_style)
+        self._loop_combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        for mode, i18n_key in [
+            (self._LOOP_SINGLE, "common.loop.single"),
+            (self._LOOP_INFINITE, "common.loop.infinite"),
+            (self._LOOP_FINITE, "common.loop.finite"),
+        ]:
+            self._loop_combo.addItem(t(i18n_key), mode)
+        self._loop_combo.setCurrentIndex(1)  # 默认：无限循环
+        self._loop_combo.currentIndexChanged.connect(self._on_loop_mode_changed)
+        lay.addWidget(self._loop_combo)
+
+        spin_style = f"""
+            QSpinBox {{
+                background-color: {th.input_bg};
+                color: {th.text_primary};
+                border: 1px solid {th.border_default};
+                border-radius: 3px;
+                padding: 1px {sm.s(4)}px;
+                font-size: {sm.s(10)}px;
+            }}
+        """
+
+        self._loop_count_spin = QSpinBox()
+        self._loop_count_spin.setObjectName("loopCountSpin")
+        self._loop_count_spin.setRange(1, 9999)
+        self._loop_count_spin.setValue(1)
+        self._loop_count_spin.setFixedWidth(sm.s(56))
+        self._loop_count_spin.setStyleSheet(spin_style)
+        self._loop_count_spin.setVisible(False)
+        lay.addWidget(self._loop_count_spin)
+
+        self._loop_times_label = QLabel(t("common.loop.times"))
+        self._loop_times_label.setStyleSheet(
+            f"color: {th.text_secondary}; font-size: {sm.s(10)}px;"
+        )
+        self._loop_times_label.setVisible(False)
+        lay.addWidget(self._loop_times_label)
+
+        self._loop_container = container
+
+    def _on_loop_mode_changed(self) -> None:
+        mode = self._loop_combo.currentData()
+        finite = mode == self._LOOP_FINITE
+        self._loop_count_spin.setVisible(finite)
+        self._loop_times_label.setVisible(finite)
+
+    def _loop_mode(self) -> str:
+        return self._loop_combo.currentData() or self._LOOP_INFINITE
+
+    def _set_loop_mode(self, mode: str, count: int = 1) -> None:
+        for i in range(self._loop_combo.count()):
+            if self._loop_combo.itemData(i) == mode:
+                self._loop_combo.setCurrentIndex(i)
+                break
+        if mode == self._LOOP_FINITE:
+            self._loop_count_spin.setValue(max(1, count))
+        self._on_loop_mode_changed()
 
     def _add_step_dialog(self, action_type: ActionType, title: str):
         try:
@@ -665,21 +770,105 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         th = current_theme()
         sm = qt_scale_manager()
         if hasattr(self, "_toolbar"):
-            btn_style = (
-                f"QPushButton {{ background: transparent; border: none; "
-                f"padding: 4px 8px; color: {th.text_primary}; }}"
-                f"QPushButton:hover {{ background: {th.bg_surface_hover}; "
-                f"border-radius: 3px; }}"
-            )
+            btn_style = self._toolbar_btn_style()
             self._toolbar.setStyleSheet(
                 f"QWidget#actionChainToolbar {{ background-color: {th.panel_bg}; border: none; }}"
             )
             for btn in self._toolbar.findChildren(QPushButton):
                 btn.setStyleSheet(btn_style)
+        if hasattr(self, "_loop_container"):
+            self._loop_container.setStyleSheet(
+                f"QFrame#loopControlFrame {{ background: transparent; }}"
+            )
+        if hasattr(self, "_loop_combo"):
+            self._loop_combo.setStyleSheet(f"""
+                QComboBox {{
+                    background-color: {th.input_bg};
+                    color: {th.text_primary};
+                    border: 1px solid {th.border_default};
+                    border-radius: 3px;
+                    padding: 1px {sm.s(4)}px;
+                    font-size: {sm.s(10)}px;
+                    min-width: {sm.s(80)}px;
+                }}
+                QComboBox::drop-down {{
+                    border: none;
+                    width: {sm.s(16)}px;
+                }}
+                QComboBox QAbstractItemView {{
+                    background-color: {th.input_bg};
+                    color: {th.text_primary};
+                    border: 1px solid {th.border_default};
+                    selection-background-color: {th.accent_blue};
+                    selection-color: {th.text_on_accent};
+                }}
+            """)
+            for i, (_, i18n_key) in enumerate([
+                ("single", "common.loop.single"),
+                ("infinite", "common.loop.infinite"),
+                ("finite", "common.loop.finite"),
+            ]):
+                self._loop_combo.setItemText(i, t(i18n_key))
+        if hasattr(self, "_loop_count_spin"):
+            self._loop_count_spin.setStyleSheet(f"""
+                QSpinBox {{
+                    background-color: {th.input_bg};
+                    color: {th.text_primary};
+                    border: 1px solid {th.border_default};
+                    border-radius: 3px;
+                    padding: 1px {sm.s(4)}px;
+                    font-size: {sm.s(10)}px;
+                }}
+            """)
+        if hasattr(self, "_loop_times_label"):
+            self._loop_times_label.setStyleSheet(
+                f"color: {th.text_secondary}; font-size: {sm.s(10)}px;"
+            )
         if hasattr(self, "_status_bar"):
             self._status_bar.setStyleSheet(
                 f"background-color: {th.panel_bg}; border-top: 1px solid {th.border_default};"
             )
+        # Update palette scroll area
+        if hasattr(self, "_palette_widget"):
+            scroll = self._palette_widget.findChild(QScrollArea)
+            if scroll:
+                scroll.setStyleSheet(f"background-color: {th.panel_bg};")
+            # Re-apply palette button styles with new theme
+            for i, btn in enumerate(getattr(self, "_palette_buttons", [])):
+                action_type = self._palette_action_types[i] if i < len(self._palette_action_types) else ""
+                accent_token = action_accent(action_type)
+                accent = getattr(th, accent_token, th.accent_blue)
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {th.btn_bg};
+                        color: {th.text_primary};
+                        border: 1px solid {th.border_default};
+                        border-left: 3px solid {accent};
+                        border-radius: 2px;
+                        padding: 2px {sm.s(6)}px;
+                        text-align: left;
+                        font-size: {sm.s(10)}px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {th.btn_bg_hover};
+                        border-color: {th.accent_blue};
+                    }}
+                """)
+        # Update log viewer
+        if hasattr(self, "_log_text"):
+            self._log_text.setStyleSheet(f"""
+                QPlainTextEdit {{
+                    background-color: {th.bg_surface};
+                    color: {th.text_primary};
+                    border: 1px solid {th.border_default};
+                    border-radius: {sm.s(3)}px;
+                    font-family: {th.font_mono[0]};
+                    font-size: {th.font_mono[1]}px;
+                }}
+            """)
+        # Update status label
+        if hasattr(self, "_status_label"):
+            self._status_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
         if self._selected_step_idx is not None:
             steps = self._model.get_steps()
             if self._selected_step_idx < len(steps):

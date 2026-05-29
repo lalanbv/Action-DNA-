@@ -13,6 +13,7 @@ from src.core.editor.commands.edit_property_command import EditPropertyCommand
 from src.core.editor.commands.edit_edge_property_command import EditEdgePropertyCommand
 from src.core.editor.commands.auto_insert_command import AutoInsertCommand
 from src.core.editor.commands.composite_command import CompositeCommand
+from src.core.editor.commands.loop_command import LoopChangedCommand
 from src.utils.i18n import t
 
 
@@ -126,6 +127,20 @@ class QtWorkflowUndoDebugMixin:
         if isinstance(cmd, EditPropertyCommand):
             if cmd.node_id:
                 self._canvas.update_node_visual(cmd.node_id)
+            return
+
+        if isinstance(cmd, LoopChangedCommand):
+            graph = self._model.graph
+            if hasattr(self, '_loop_combo'):
+                from src.core.flow import find_loop_edge
+                loop = graph.loop
+                mode = "single" if not loop else ("infinite" if graph.loop_count == 0 else "finite")
+                self._loop_combo.setCurrentIndex(
+                    ["single", "infinite", "finite"].index(mode)
+                )
+                if hasattr(self, '_loop_spin'):
+                    self._loop_spin.setValue(graph.loop_count)
+            self._canvas.render_graph(graph)
             return
 
         self._canvas.render_graph(graph)

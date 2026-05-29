@@ -12,6 +12,7 @@ from src.core.editor.commands.edit_edge_property_command import EditEdgeProperty
 from src.core.editor.commands.auto_insert_command import AutoInsertCommand
 from src.core.editor.commands.move_node_command import MoveNodeCommand
 from src.core.editor.commands.reconnect_edge_command import ReconnectEdgeCommand
+from src.core.editor.commands.loop_command import LoopChangedCommand
 from src.core.editor.commands.remove_edge_command import RemoveEdgeCommand
 from src.core.editor.commands.remove_node_command import RemoveNodeCommand
 from src.core.editor.undo_manager import UndoManager, UndoManagerConfig
@@ -166,6 +167,15 @@ class WorkflowController(BaseController):
         node = self.model.graph.get_node(node_id)
         if node:
             node.error_config = error_config
+
+    def update_loop(self, loop: bool, loop_count: int) -> None:
+        """通过 undo command 系统更新循环模式。"""
+        cmd = LoopChangedCommand(
+            graph=self.model.graph,
+            new_loop=loop,
+            new_loop_count=loop_count,
+        )
+        self.undo_manager.execute(cmd)
 
     def _clone_node(
         self, source: FlowNode, offset_x: float = 0, offset_y: float = 0,

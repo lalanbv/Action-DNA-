@@ -11,6 +11,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, ClassVar
 
 from src.core.step_types import BaseStep
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.condition import Condition
@@ -55,7 +56,6 @@ class FlowNode:
 
     def describe(self) -> str:
         """返回节点的人类可读描述"""
-        from src.utils.i18n import t
         match self.node_type:
             case NodeType.START:
                 return t("flow.node.start")
@@ -145,25 +145,24 @@ class FlowGraph:
                 del self._incoming[edge.to_node]
 
     def describe(self) -> str:
-        from src.utils.i18n import t
         return t("flow.describe.graph", name=self.name, nodes=len(self.nodes), edges=len(self.edges))
 
     # ── 节点操作 ──────────────────────────────────────────────
 
     def add_node(self, node: FlowNode) -> None:
+        existing = self._type_index.get(node.node_type)
+        if existing and existing.node_id != node.node_id and node.node_type in (NodeType.START, NodeType.END):
+            logging.getLogger(__name__).warning(
+                "覆盖已有 %s 节点: %s → %s",
+                node.node_type.name, existing.node_id, node.node_id,
+            )
         if node.node_type in (NodeType.START, NodeType.END):
-            existing = self._type_index.get(node.node_type)
-            if existing and existing.node_id != node.node_id:
-                logging.getLogger(__name__).warning(
-                    "覆盖已有 %s 节点: %s → %s",
-                    node.node_type.name, existing.node_id, node.node_id,
-                )
             self._type_index[node.node_type] = node
         self.nodes[node.node_id] = node
 
     def remove_node(self, node_id: str) -> None:
         node = self.nodes.pop(node_id, None)
-        if node and node.node_type in self._type_index:
+        if node:
             indexed = self._type_index.get(node.node_type)
             if indexed and indexed.node_id == node_id:
                 del self._type_index[node.node_type]
@@ -399,7 +398,8 @@ class FlowGraph:
             del self._type_index[nt]
         for node in self.nodes.values():
             if node.node_type == nt:
-                self._type_index[nt] = node
+                if nt in (NodeType.START, NodeType.END):
+                    self._type_index[nt] = node
                 return node
         return None
 

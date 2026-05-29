@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
 
 from src.core.action import ActionType
 from src.core.step_types import BaseStep, ClickPosStep
 from src.panel.canvas.theme import current_theme
 from src.panel.dialogs.base_dialog import StepDialogBase
 from src.panel.dialogs.dialog_registry import DialogRegistry
-from src.panel.widgets import themed_checkbutton, themed_frame, themed_label
+from src.panel.widgets import themed_checkbutton, themed_dropdown, themed_frame, themed_label
 from src.utils.i18n import t
 
 
@@ -41,11 +40,12 @@ class ClickPosDialog(StepDialogBase):
         btn_frame = themed_frame(self._content_frame)
         btn_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=th.pad_xs)
         themed_label(btn_frame, text=t("dialog.label.mouse_button")).pack(side=tk.LEFT, padx=(0, th.pad_sm))
-        self._vars["button"] = tk.StringVar(value="left")
-        ttk.Combobox(
-            btn_frame, textvariable=self._vars["button"],
-            values=["left", "right", "middle"], state="readonly", width=8,
-        ).pack(side=tk.LEFT)
+        self._button_dd = themed_dropdown(
+            btn_frame,
+            options=[("left", "action.key.mouse_left"), ("right", "action.key.mouse_right"), ("middle", "action.key.mouse_middle")],
+            value="left", state="readonly", width=8,
+        )
+        self._button_dd.pack(side=tk.LEFT)
 
         self._vars["use_coord_var"] = tk.BooleanVar(value=False)
         themed_checkbutton(
@@ -68,7 +68,7 @@ class ClickPosDialog(StepDialogBase):
         self._vars["pos_y"].set(action.pos_y)
         self._vars["clicks"].set(action.clicks)
         self._vars["hold_duration"].set(action.hold_duration)
-        self._vars["button"].set(action.button or "left")
+        self._button_dd.set_value(action.button or "left")
         self._vars["use_coord_var"].set(action.use_coord_var)
         coord_entry = self._vars["coord_var_name"]
         coord_entry.delete(0, tk.END)
@@ -81,7 +81,7 @@ class ClickPosDialog(StepDialogBase):
         step.pos_y = self._get_int("pos_y", min_val=0, max_val=9999, default=0)
         step.clicks = self._get_int("clicks", min_val=1, max_val=5, default=1)
         step.hold_duration = self._get_float("hold_duration", min_val=0.0, max_val=30.0, default=0.0, decimal_places=2)
-        step.button = self._vars["button"].get()
+        step.button = self._button_dd.get_value()
         step.use_coord_var = self._vars["use_coord_var"].get()
         step.coord_var_name = self._vars["coord_var_name"].get()
         self._apply_common(step)

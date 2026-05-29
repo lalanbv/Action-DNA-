@@ -8,12 +8,15 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTabWidget, QTreeWidget, QVBoxLayout, QWidget,
+    QScrollArea, QTabWidget, QTreeWidget, QVBoxLayout, QWidget,
 )
 
 from src.core.flow import NodeType
 from src.panel.canvas.theme import current_theme, node_fill_color
-from src.panel.components.palette_data import ACTION_PALETTE, FLOW_PALETTE
+from src.panel.components.palette_data import (
+    ACTION_PALETTE, FLOW_PALETTE, HELP_ACTION_ITEMS, HELP_FLOW_ITEMS,
+    action_accent, flow_accent,
+)
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.panel.qt_backend.widgets import themed_palette_button, themed_section_header
 from src.utils.i18n import t
@@ -33,7 +36,7 @@ class QtWorkflowPaletteMixin:
         self._palette_buttons: list[QWidget] = []
 
         self._palette_widget = QWidget()
-        self._palette_widget.setFixedWidth(sm.s(th.panel_width_left))
+        self._palette_widget.setMinimumWidth(sm.s(100))
         palette_layout = QVBoxLayout(self._palette_widget)
         palette_layout.setContentsMargins(0, 0, 0, 0)
         palette_layout.setSpacing(0)
@@ -51,8 +54,10 @@ class QtWorkflowPaletteMixin:
             QTabBar::tab {{
                 background-color: {th.bg_surface};
                 color: {th.text_primary};
-                padding: {sm.s(4)}px {sm.s(8)}px;
+                padding: {sm.s(3)}px {sm.s(6)}px;
                 border: 1px solid {th.border_default};
+                font-size: {sm.s(10)}px;
+                min-width: {sm.s(40)}px;
             }}
             QTabBar::tab:selected {{
                 background-color: {th.panel_bg};
@@ -63,9 +68,12 @@ class QtWorkflowPaletteMixin:
     # ── Nodes tab ──────────────────────────────────────────
 
     def _build_nodes_tab(self, notebook: QTabWidget):
+        th = current_theme()
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
         search = QLineEdit()
         search.setPlaceholderText(t("workflow.palette.search_placeholder"))
@@ -73,13 +81,20 @@ class QtWorkflowPaletteMixin:
         layout.addWidget(search)
         self._palette_search = search
 
-        scroll_area = QWidget()
-        self._palette_inner_layout = QVBoxLayout(scroll_area)
+        # 按钮容器
+        scroll_content = QWidget()
+        self._palette_inner_layout = QVBoxLayout(scroll_content)
         self._palette_inner_layout.setContentsMargins(0, 0, 0, 0)
         self._palette_inner_layout.setSpacing(2)
         self._palette_inner_layout.addStretch()
 
-        layout.addWidget(scroll_area)
+        # 用 QScrollArea 包裹，使内容可滚动
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {th.panel_bg}; }}")
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
 
         self._build_action_section()
         self._build_flow_section()
@@ -87,12 +102,14 @@ class QtWorkflowPaletteMixin:
         notebook.addTab(tab, t("workflow.tab.nodes"))
 
     def _build_action_section(self):
+        th = current_theme()
         self._palette_inner_layout.insertWidget(
             self._palette_inner_layout.count() - 1,
             self._make_section_header(t("workflow.palette.section_action")),
         )
         for action_type, i18n_key in ACTION_PALETTE:
-            color = node_fill_color("ACTION")
+            accent_token = action_accent(action_type)
+            color = getattr(th, accent_token, th.accent_blue)
             btn = self._create_palette_button(
                 f"+ {t(i18n_key)}", color,
                 lambda at=action_type: self._on_add_action_node(at),
@@ -101,12 +118,14 @@ class QtWorkflowPaletteMixin:
             btn._palette_text = t(i18n_key)
 
     def _build_flow_section(self):
+        th = current_theme()
         self._palette_inner_layout.insertWidget(
             self._palette_inner_layout.count() - 1,
             self._make_section_header(t("workflow.palette.section_flow")),
         )
         for node_type, i18n_key in FLOW_PALETTE:
-            color = node_fill_color(node_type)
+            accent_token = flow_accent(node_type)
+            color = getattr(th, accent_token, th.accent_blue)
             btn = self._create_palette_button(
                 t(i18n_key), color,
                 lambda nt=node_type: self._on_add_node(nt),
@@ -155,53 +174,64 @@ class QtWorkflowPaletteMixin:
     # ── Help tab ──────────────────────────────────────────
 
     def _build_help_tab(self, notebook: QTabWidget):
+        th = current_theme()
         tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(4, 4, 4, 4)
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(4, 4, 4, 4)
+        tab_layout.setSpacing(0)
 
-        help_action_items = [
-            ("action_type.click_image", "workflow.help.click_image"),
-            ("action_type.wait", "workflow.help.wait"),
-            ("action_type.wait_random", "workflow.help.wait_random"),
-            ("action_type.press_key", "workflow.help.press_key"),
-            ("action_type.click_pos", "workflow.help.click_pos"),
-            ("action_type.scroll", "workflow.help.mouse_scroll"),
-            ("action_type.hold_key", "workflow.help.hold_key"),
-            ("action_type.mouse_move", "workflow.help.mouse_move"),
-            ("action_type.mouse_drag", "workflow.help.mouse_drag"),
-            ("action_type.key_combo", "workflow.help.key_combo"),
-            ("action_type.multi_key", "workflow.help.multi_key_sequence"),
-            ("action_type.idle", "workflow.help.idle_behavior"),
-            ("action_type.start_timer", "workflow.help.start_timer"),
-        ]
-        layout.addWidget(QLabel(f"<b>{t('workflow.help.action.title')}</b>"))
-        for name_key, desc_key in help_action_items:
-            row = QLabel(f"<b>{t(name_key)}</b>: {t(desc_key)}")
-            row.setWordWrap(True)
-            layout.addWidget(row)
+        scroll_content = QWidget()
+        content_layout = QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(4)
 
-        layout.addSpacing(8)
+        self._build_help_card(content_layout, th,
+                              title_key="workflow.help.action.title",
+                              title_color=th.accent_blue,
+                              items=HELP_ACTION_ITEMS)
+        self._build_help_card(content_layout, th,
+                              title_key="workflow.help.flow.title",
+                              title_color=th.accent_orange,
+                              items=HELP_FLOW_ITEMS)
 
-        help_flow_items = [
-            ("workflow.node.start", "workflow.help.start"),
-            ("workflow.node.end", "workflow.help.end"),
-            ("workflow.node.condition", "workflow.help.condition"),
-            ("workflow.node.merge", "workflow.help.merge"),
-            ("workflow.node.loop", "workflow.help.loop"),
-        ]
-        layout.addWidget(QLabel(f"<b>{t('workflow.help.flow.title')}</b>"))
-        for name_key, desc_key in help_flow_items:
-            row = QLabel(f"<b>{t(name_key)}</b>: {t(desc_key)}")
-            row.setWordWrap(True)
-            layout.addWidget(row)
-
-        layout.addSpacing(8)
         hint = QLabel(t("workflow.help.hint"))
         hint.setWordWrap(True)
-        layout.addWidget(hint)
-        layout.addStretch()
+        hint.setStyleSheet(f"color: {th.text_muted};")
+        content_layout.addWidget(hint)
+        content_layout.addStretch()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setStyleSheet(f"QScrollArea {{ background-color: {th.panel_bg}; }}")
+        scroll.setWidget(scroll_content)
+        tab_layout.addWidget(scroll)
 
         notebook.addTab(tab, t("workflow.tab.help"))
+
+    def _build_help_card(self, layout: QVBoxLayout, th, *,
+                         title_key: str, title_color: str,
+                         items: list[tuple[str, str]]) -> None:
+        card = QWidget()
+        card.setStyleSheet(
+            f"QWidget {{ background-color: {th.card_bg}; "
+            f"border: 1px solid {th.border_default}; border-radius: 4px; }}"
+        )
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(6, 4, 6, 4)
+        card_layout.setSpacing(1)
+
+        title = QLabel(f"<b>{t(title_key)}</b>")
+        title.setStyleSheet(f"color: {title_color}; border: none;")
+        card_layout.addWidget(title)
+
+        for name_key, desc_key in items:
+            row = QLabel(f"<b>{t(name_key)}</b>: {t(desc_key)}")
+            row.setWordWrap(True)
+            row.setStyleSheet(f"color: {th.text_secondary}; border: none;")
+            card_layout.addWidget(row)
+
+        layout.addWidget(card)
 
     # ── Helpers ──────────────────────────────────────────
 

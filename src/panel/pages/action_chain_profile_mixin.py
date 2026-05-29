@@ -5,6 +5,7 @@
   - self.controller: ActionChainController
   - self.step_ring: StepRing | None
   - self.step_props: StepPropertyPanel
+  - self.loop_controls: LoopControls
   - self.run_controls: RunControls
   - self.var_status: tk.StringVar
   - self.status_bar: StatusBar
@@ -13,7 +14,7 @@
   - self.mon_tree: ttk.Treeview
   - self._mon_count_var: tk.StringVar
   - self._btn_mon_edit, _btn_mon_toggle, _btn_mon_delete
-  - self._paned: ttk.PanedWindow
+  - self._paned: tk.PanedWindow
   - self._ring_log: RingBufferLog
   - self.app: PanelApp
   - self._on_step_selected()
@@ -128,8 +129,8 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
     # ── 执行控制 ──
 
     def _sync_loop_config(self):
-        self.model.graph.loop = self.step_props.var_loop.get()
-        self.model.graph.loop_count = self.step_props.var_loop_count.get()
+        self.model.graph.loop = self.loop_controls.loop
+        self.model.graph.loop_count = self.loop_controls.loop_count
 
     def _on_start(self):
         self._sync_loop_config()
@@ -159,8 +160,7 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
 
     def _on_chain_loaded(self, **_kw):
         self._on_steps_changed()
-        self.step_props.var_loop.set(self.model.graph.loop)
-        self.step_props.var_loop_count.set(self.model.graph.loop_count)
+        self.loop_controls.set_from_model(self.model.graph.loop, self.model.graph.loop_count)
         self._refresh_profile_list()
         self._refresh_monitor_list()
 
@@ -213,8 +213,7 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
         state = result.state
         if result.graph_copied:
             self._on_steps_changed()
-            self.step_props.var_loop.set(self.model.graph.loop)
-            self.step_props.var_loop_count.set(self.model.graph.loop_count)
+            self.loop_controls.set_from_model(self.model.graph.loop, self.model.graph.loop_count)
 
         self._on_executor_state(state=state)
 
