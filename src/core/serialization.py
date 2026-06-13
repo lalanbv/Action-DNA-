@@ -5,8 +5,9 @@
 
 import dataclasses
 import os
+from enum import Enum
 
-from src.core.action import ActionType, DetectMode, FoundAction
+from src.core.action import ActionType, DetectMode, FoundAction, MatchStrategy, ThresholdMode
 from src.core.step_types import BaseStep, ClickImageStep, STEP_CLASSES
 from src.utils.i18n import t
 from src.core.condition import Condition, ConditionType
@@ -62,9 +63,9 @@ def typed_step_to_dict(step: BaseStep) -> dict:
     """
     d = dataclasses.asdict(step)
     d["action_type"] = step.action_type.name
-    # 将 Enum 值转为 name 字符串
+    # 将所有 Enum 值转为 name 字符串(DetectMode/FoundAction/MatchStrategy/ThresholdMode 等)
     for key, val in list(d.items()):
-        if isinstance(val, (DetectMode, FoundAction)):
+        if isinstance(val, Enum):
             d[key] = val.name
     return d
 
@@ -87,6 +88,11 @@ def dict_to_typed_step(data: dict) -> BaseStep:
         d["detect_mode"] = DetectMode[d["detect_mode"]]
     if "found_action" in d:
         d["found_action"] = resolve_found_action(d["found_action"])
+    # 多模板枚举字段还原(name 字符串 → 枚举)
+    if "match_strategy" in d and isinstance(d["match_strategy"], str):
+        d["match_strategy"] = MatchStrategy[d["match_strategy"]]
+    if "threshold_mode" in d and isinstance(d["threshold_mode"], str):
+        d["threshold_mode"] = ThresholdMode[d["threshold_mode"]]
     # 旧版兼容：skip_if_not_found → detect_mode
     if "skip_if_not_found" in d and "detect_mode" not in d:
         d["detect_mode"] = (
@@ -178,6 +184,12 @@ def dict_to_flow_node(data: dict, profile_dir: str) -> FlowNode:
         if isinstance(action, ClickImageStep) and action.image_path:
             abs_path = os.path.normpath(os.path.join(profile_dir, action.image_path))
             action.image_path = abs_path
+        # 多模板备用图:相对路径 → 绝对(与主图同一转换规则)
+        if isinstance(action, ClickImageStep) and action.alt_image_paths:
+            action.alt_image_paths = [
+                os.path.normpath(os.path.join(profile_dir, p)) if p else p
+                for p in action.alt_image_paths
+            ]
 
     if "condition" in data and data["condition"] is not None:
         condition = dict_to_condition(data["condition"])
