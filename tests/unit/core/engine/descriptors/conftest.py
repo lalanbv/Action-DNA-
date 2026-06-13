@@ -88,6 +88,20 @@ def _make_ctx(
         ctx.matcher = MagicMock()
         ctx.matcher.find.return_value = match_result
 
+        # find_any 代理到 find:描述符现调用 find_any,但既有测试 mock 的是 find。
+        # 通过委托保持 find 的 side_effect/return_value/call_count 语义全部有效。
+        def _find_any_proxy(screen, template_paths, threshold=0.8, **kwargs):
+            primary = template_paths[0] if template_paths else ""
+            rect = ctx.matcher.find(screen, primary, threshold)
+            if rect is None:
+                return None
+            from src.core.vision.capture import MultiMatchResult
+            return MultiMatchResult(
+                path=primary, rect=rect, confidence=0.95, strategy_used="mock",
+            )
+
+        ctx.matcher.find_any.side_effect = _find_any_proxy
+
         ctx.input_ctrl = MagicMock() if input_ctrl is None else input_ctrl
 
     # 可选依赖 — 显式设置以覆盖 MagicMock 自动属性

@@ -19,6 +19,8 @@ from src.core.engine.execution_blocker import ExecutionBlocker
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.core.vision.capture import MultiMatchResult
+from src.core.vision.match_config import resolve_find_any_params
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -142,7 +144,7 @@ class ClickImageDescriptor(NodeDescriptor):
             )
 
         match_rect = self._find_with_retries(
-            ctx, action.image_path, action.threshold, action.retry_count,
+            ctx, action, action.retry_count,
             action.retry_wait_min, action.retry_wait_max,
         )
 
@@ -159,31 +161,46 @@ class ClickImageDescriptor(NodeDescriptor):
     def _try_single_match(
         self,
         ctx: ExecutionContext,
-        template_path: str,
-        threshold: float,
+        action: ClickImageStep,
     ) -> _MatchAttempt:
-        """执行单次截图 + 模板匹配，返回 _MatchAttempt。"""
+        """执行单次截图 + 多模板匹配,返回 _MatchAttempt(rect 取自命中模板)。"""
         try:
             screenshot = ctx.capture.grab(force=False)
-            rect = ctx.matcher.find(screenshot, template_path, threshold)
+            paths, per_thr, strategy = resolve_find_any_params(
+                primary_path=action.image_path,
+                alt_paths=action.alt_image_paths,
+                base_threshold=action.threshold,
+                alt_thresholds=action.alt_thresholds,
+                threshold_mode=action.threshold_mode,
+                match_strategy=action.match_strategy,
+            )
+            if not paths:
+                return _MatchAttempt(rect=None, had_error=False, error_msg="无可匹配模板")
+            result: MultiMatchResult | None = ctx.matcher.find_any(
+                screenshot,
+                paths,
+                threshold=action.threshold,
+                strategy=strategy,
+                per_template_thresholds=per_thr,
+            )
+            rect = result.rect if result is not None else None
             return _MatchAttempt(rect=rect, had_error=False)
         except Exception as exc:
-            logger.warning("模板匹配异常: %s — %s", template_path, exc)
+            logger.warning("多模板匹配异常: %s — %s", action.image_path, exc)
             return _MatchAttempt(rect=None, had_error=True, error_msg=str(exc))
 
     def _find_with_retries(
         self,
         ctx: ExecutionContext,
-        template_path: str,
-        threshold: float,
+        action: ClickImageStep,
         retry_count: int,
         retry_wait_min: float,
         retry_wait_max: float,
     ) -> tuple[int, int, int, int] | None:
-        """带重试的模板匹配，返回 (x, y, w, h) 或 None。
+        """带重试的多模板匹配,返回 (x, y, w, h) 或 None。
 
         首次截图前等待短暂稳定时间，让上一步触发的 UI 动画完成。
-        重试日志聚合为一条汇总输出，方便查看和统计。
+        retry 作用于整个模板集合；重试日志聚合为一条汇总输出。
         """
         # 首次截图前稳定延迟：让屏幕动画/过渡完成（仅首轮）
         if ctx.gen == 0:
@@ -195,13 +212,13 @@ class ClickImageDescriptor(NodeDescriptor):
         miss_count = 0
         error_count = 0
         last_error: str | None = None
-        basename = os.path.basename(template_path)
+        basename = os.path.basename(action.image_path)
 
         for attempt in range(attempts):
             if ctx.stop_event.is_set():
                 return None
 
-            result = self._try_single_match(ctx, template_path, threshold)
+            result = self._try_single_match(ctx, action)
             if result.had_error:
                 error_count += 1
                 last_error = result.error_msg
@@ -270,7 +287,7 @@ class ClickImageDescriptor(NodeDescriptor):
                 continue
 
             check_count += 1
-            result = self._try_single_match(ctx, action.image_path, action.threshold)
+            result = self._try_single_match(ctx, action)
             if result.had_error:
                 error_count += 1
                 logger.warning("WAIT 模板匹配异常: %s", action.image_path)
