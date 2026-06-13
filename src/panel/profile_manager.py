@@ -150,6 +150,12 @@ class ProfileManager:
             if isinstance(node.action, ClickImageStep) and node.action.image_path:
                 rel = self._copy_image(node.action.image_path, profile_dir, images_dir)
                 node_dict["action"]["image_path"] = rel
+            # 多模板备用图:逐个拷贝到 images/ 并存相对路径
+            if isinstance(node.action, ClickImageStep) and node.action.alt_image_paths:
+                node_dict["action"]["alt_image_paths"] = [
+                    self._copy_image(p, profile_dir, images_dir)
+                    for p in node.action.alt_image_paths
+                ]
             # 处理 CONDITION 节点的图片
             if node.condition and node.condition.image_path:
                 node_dict["condition"]["image_path"] = self._copy_image(

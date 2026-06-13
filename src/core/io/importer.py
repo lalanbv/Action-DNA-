@@ -217,6 +217,12 @@ def _graph_to_v2_dict(graph: FlowGraph, profile_dir: str) -> dict:
                 nd["action"]["image_path"] = os.path.relpath(
                     node.action.image_path, profile_dir
                 )
+        # 多模板备用图:绝对路径 → 相对 profile_dir
+        if isinstance(node.action, ClickImageStep) and node.action.alt_image_paths:
+            nd["action"]["alt_image_paths"] = [
+                os.path.relpath(p, profile_dir) if os.path.isabs(p) else p
+                for p in node.action.alt_image_paths
+            ]
         nodes_data.append(nd)
 
     edges_data = [flow_edge_to_dict(e) for e in graph.edges]
