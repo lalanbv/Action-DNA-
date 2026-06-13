@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QHBoxLayout, QLabel
 
 from src.core.action import DetectMode, FoundAction
 from src.core.step_types import BaseStep, ClickImageStep
@@ -13,6 +13,7 @@ from src.utils.i18n import t
 
 from src.panel.qt_backend.dialogs.base_dialog import QtStepDialogBase
 from src.panel.qt_backend.dialogs._mappings import _FOUND_ACTION_I18N, _DETECT_MODE_I18N
+from src.panel.qt_backend.dialogs.multi_template_editor import MultiTemplateEditorQt
 
 
 class QtClickImageDialog(QtStepDialogBase):
@@ -25,23 +26,9 @@ class QtClickImageDialog(QtStepDialogBase):
         self._fa_labels = {fa: t(key) for fa, key in _FOUND_ACTION_I18N.items()}
         self._dm_labels = {dm: t(key) for dm, key in _DETECT_MODE_I18N.items()}
 
-        # Image path
-        img_row = themed_frame(self)
-        img_layout = QHBoxLayout(img_row)
-        img_layout.setContentsMargins(0, 0, 0, 0)
-        self._vars["image_path"] = themed_entry(img_row, placeholder=t("dialog.hint.no_image"))
-        img_layout.addWidget(self._vars["image_path"], 1)
-        browse_btn = themed_button(
-            img_row, text=t("dialog.btn.select_image"), command=self._browse,
-        )
-        img_layout.addWidget(browse_btn)
-        self._add_row(t("dialog.label.template_image"), img_row)
-
-        # Threshold
-        self._vars["threshold"] = self._add_labeled_spinbox(
-            t("dialog.label.confidence"),
-            default=0.8, min_val=0.1, max_val=1.0, increment=0.05,
-        )
+        # 多模板图片管理器(主图 + 状态备用图,替代单行 image_path + 阈值)
+        self._mt_editor = MultiTemplateEditorQt(self)
+        self._add_row(t("dialog.label.template_image"), self._mt_editor)
 
         # Detect mode
         self._vars["detect_mode_combo"] = themed_combobox(
@@ -112,17 +99,15 @@ class QtClickImageDialog(QtStepDialogBase):
         else:
             self._drag_row.hide()
 
-    def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, t("dialog.title.select_template_image"), "",
-            f"{t('dialog.filetype.image')} (*.png *.jpg *.jpeg *.bmp);;{t('dialog.filetype.all')} (*.*)",
-        )
-        if path:
-            self._vars["image_path"].setText(path)
-
     def _populate_fields(self, action: BaseStep) -> None:
-        self._vars["image_path"].setText(action.image_path)
-        self._vars["threshold"].setValue(action.threshold)
+        self._mt_editor.set_state(
+            image_path=action.image_path,
+            alt_paths=action.alt_image_paths,
+            alt_thresholds=action.alt_thresholds,
+            mode=action.threshold_mode,
+            strategy=action.match_strategy,
+            global_threshold=action.threshold,
+        )
         for k, v in self._dm_labels.items():
             if k == action.detect_mode:
                 idx = self._vars["detect_mode_combo"].findText(v)
@@ -147,8 +132,16 @@ class QtClickImageDialog(QtStepDialogBase):
 
     def _get_result(self) -> BaseStep:
         step = self._action or ClickImageStep()
-        step.image_path = self._vars["image_path"].text()
-        step.threshold = self._get_float("threshold", min_val=0.0, max_val=1.0, default=0.8)
+        (
+            image_path, alt_paths, alt_thresholds,
+            mode, strategy, global_threshold,
+        ) = self._mt_editor.get_state()
+        step.image_path = image_path
+        step.alt_image_paths = alt_paths
+        step.alt_thresholds = alt_thresholds
+        step.threshold_mode = mode
+        step.match_strategy = strategy
+        step.threshold = global_threshold
         step.retry_count = self._get_int("retry_count", min_val=0, default=3)
         step.retry_wait_min = self._get_float("retry_wait_min", min_val=0.0, default=0.5)
         step.retry_wait_max = self._get_float("retry_wait_max", min_val=0.0, default=1.5)
