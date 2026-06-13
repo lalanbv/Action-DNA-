@@ -4,6 +4,7 @@ import os
 import threading
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import mss
@@ -332,6 +333,22 @@ class _TemplateEntry(NamedTuple):
     last_check: float
     preprocessed: np.ndarray
     gray: np.ndarray
+
+
+@dataclass(frozen=True)
+class MultiMatchResult:
+    """多模板匹配的单次命中结果(不可变)。
+
+    path:           命中的模板路径
+    rect:           命中位置 (x, y, w, h)
+    confidence:     命中置信度
+    strategy_used:  实际终止策略("early_exit"|"best_of"|"first_match"|"adaptive_best")
+    """
+
+    path: str
+    rect: tuple[int, int, int, int]
+    confidence: float
+    strategy_used: str
 
 
 class TemplateMatcher:
@@ -744,6 +761,75 @@ class TemplateMatcher:
             self._match_cache[key] = _MatchCacheEntry(result, score, time.monotonic())
             if len(self._match_cache) > self.MATCH_CACHE_SIZE:
                 self._match_cache.popitem(last=False)
+
+    def find_any(
+        self,
+        screen: np.ndarray,
+        template_paths: list[str],
+        threshold: float,
+        *,
+        strategy: "MatchStrategy | None" = None,
+        per_template_thresholds: list[float] | None = None,
+        screen_hash: int | None = None,
+    ) -> MultiMatchResult | None:
+        """多模板匹配编排入口(任一命中即视为找到)。
+
+        按 template_paths 顺序逐个调用 find_with_score,据 strategy 决定终止时机:
+          ADAPTIVE(默认):     高确信(>= eff_threshold + _EARLY_EXIT_MARGIN)提前退出;否则扫完取最佳
+          FIRST_MATCH:        第一个命中即返回
+          BEST_CONFIDENCE:    总是扫完,取最高置信度
+
+        per_template_thresholds 与 template_paths 平行,缺省时全部用 threshold。
+        每个内部 find_with_score 各自命中 LRU 缓存 → 挂机循环下近乎零开销。
+        """
+        from src.core.action import MatchStrategy
+        if strategy is None:
+            strategy = MatchStrategy.ADAPTIVE
+
+        if not template_paths:
+            return None
+
+        if screen_hash is None:
+            screen_hash = compute_image_hash(screen)
+
+        candidates: list[MultiMatchResult] = []
+        total = len(template_paths)
+
+        for i, path in enumerate(template_paths):
+            eff = per_template_thresholds[i] if per_template_thresholds else threshold
+            rect, score = self.find_with_score(screen, path, eff, screen_hash)
+
+            if rect is not None:
+                if strategy == MatchStrategy.FIRST_MATCH:
+                    log.info(
+                        "[MULTI] \"%s\" 命中 (conf=%.2f, 策略=first_match, 第%d/%d张)",
+                        os.path.basename(path), score, i + 1, total,
+                    )
+                    return MultiMatchResult(path, rect, score, "first_match")
+
+                candidates.append(MultiMatchResult(path, rect, score, ""))
+
+                # ADAPTIVE 高确信提前退出
+                if strategy == MatchStrategy.ADAPTIVE and score >= eff + self._EARLY_EXIT_MARGIN:
+                    log.info(
+                        "[MULTI] \"%s\" 命中 (conf=%.2f, 策略=early_exit, 第%d/%d张)",
+                        os.path.basename(path), score, i + 1, total,
+                    )
+                    return MultiMatchResult(path, rect, score, "early_exit")
+
+        if not candidates:
+            log.info("[MULTI] %d 张模板全部未匹配 ✗", total)
+            return None
+
+        # 兜底:全局最佳(ADAPTIVE 的模糊态 / BEST_CONFIDENCE)
+        best = max(candidates, key=lambda c: c.confidence)
+        used = "best_of" if strategy == MatchStrategy.BEST_CONFIDENCE else "adaptive_best"
+        idx = template_paths.index(best.path) + 1
+        log.info(
+            "[MULTI] \"%s\" 命中 (conf=%.2f, 策略=%s, 第%d/%d张)",
+            os.path.basename(best.path), best.confidence, used, idx, total,
+        )
+        return MultiMatchResult(best.path, best.rect, best.confidence, used)
 
     def find_all(
         self,
