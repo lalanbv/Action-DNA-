@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
-import os
-
 import tkinter as tk
-from tkinter import filedialog
 
-try:
-    from PIL import Image, ImageTk
-except ImportError:
-    Image = None  # type: ignore[assignment,misc]
-    ImageTk = None  # type: ignore[assignment]
-
-from src.core.action import ActionType, DetectMode, FoundAction
+from src.core.action import ActionType, DetectMode, FoundAction, MatchStrategy, ThresholdMode
 from src.core.step_types import BaseStep, ClickImageStep
 from src.panel.canvas.theme import current_theme
 from src.panel.dialogs.base_dialog import StepDialogBase
 from src.panel.dialogs.dialog_registry import DialogRegistry
 from src.panel.dialogs.key_picker import SyncedVar
+from src.panel.dialogs.multi_template_editor import MultiTemplateEditor
 from src.panel.widgets import themed_button, themed_dropdown, themed_entry, themed_frame, themed_label, themed_spinbox
 from src.utils.i18n import t
 
@@ -50,40 +42,16 @@ _DETECT_MODE_OPTIONS = [
 class ClickImageDialog(StepDialogBase):
     """图片点击配置对话框。"""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        self._photo_ref: list[object] = [None]
-        super().__init__(*args, **kwargs)
-
     def _build_content(self) -> None:
         th = current_theme()
         row = 0
 
-        # 图片路径 + 预览
+        # 多模板图片管理器(主图 + 状态备用图,替代单行 image_path + 阈值)
         themed_label(
             self._content_frame, text=t("dialog.label.template_image"),
         ).grid(row=row, column=0, sticky=tk.NW, padx=th.pad_sm, pady=th.pad_xs)
-        img_frame = themed_frame(self._content_frame)
-        img_frame.grid(row=row, column=1, sticky=tk.EW, padx=th.pad_sm)
-
-        self._vars["image_path"] = tk.StringVar()
-        themed_entry(img_frame, textvariable=self._vars["image_path"], width=32).pack(
-            side=tk.TOP, fill=tk.X,
-        )
-        btn_frame = themed_frame(img_frame)
-        btn_frame.pack(side=tk.TOP, fill=tk.X, pady=th.pad_xs)
-        self._preview_label = themed_label(btn_frame, text=t("dialog.hint.no_image"))
-        self._preview_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        themed_button(
-            btn_frame, text=t("dialog.btn.select_image"), command=self._browse,
-        ).pack(side=tk.RIGHT, padx=th.pad_xs)
-        self._vars["image_path"].trace_add("write", self._update_preview)
-        row += 1
-
-        # 阈值
-        self._vars["threshold"] = self._add_labeled_spinbox(
-            self._content_frame, t("dialog.label.confidence"),
-            default=0.8, min_val=0.1, max_val=1.0, increment=0.05, row=row,
-        )
+        self._mt_editor = MultiTemplateEditor(self._content_frame)
+        self._mt_editor.frame.grid(row=row, column=1, sticky=tk.EW, padx=th.pad_sm)
         row += 1
 
         # 检测模式
@@ -204,38 +172,15 @@ class ClickImageDialog(StepDialogBase):
     def _on_found_action_changed(self) -> None:
         self._on_found_action_value(self._fa_dropdown.get_value())
 
-    def _browse(self) -> None:
-        p = filedialog.askopenfilename(
-            title=t("dialog.title.select_template_image"),
-            filetypes=[
-                (t("dialog.filetype.image"), "*.png *.jpg *.jpeg *.bmp"),
-                (t("dialog.filetype.all"), "*.*"),
-            ],
-        )
-        if p:
-            self._vars["image_path"].set(p)
-
-    def _update_preview(self, *_: object) -> None:
-        path = self._vars["image_path"].get()
-        if not path or not os.path.exists(path):
-            self._preview_label.configure(image="", text=t("dialog.hint.no_image"))
-            return
-        if Image is None:
-            self._preview_label.configure(image="", text=t("dialog.hint.preview_failed"))
-            return
-        try:
-            img = Image.open(path)
-            img.thumbnail((160, 100))
-            self._photo_ref[0] = ImageTk.PhotoImage(img)
-            self._preview_label.configure(image=self._photo_ref[0], text="")
-        except (OSError, ValueError):
-            self._preview_label.configure(
-                image="", text=t("dialog.hint.preview_failed"),
-            )
-
     def _populate_fields(self, action: BaseStep) -> None:
-        self._vars["image_path"].set(action.image_path)
-        self._vars["threshold"].set(action.threshold)
+        self._mt_editor.set_state(
+            image_path=action.image_path,
+            alt_paths=action.alt_image_paths,
+            alt_thresholds=action.alt_thresholds,
+            mode=action.threshold_mode,
+            strategy=action.match_strategy,
+            global_threshold=action.threshold,
+        )
         self._dm_dropdown.set_value(action.detect_mode.name)
         self._vars["retry_count"].set(action.retry_count)
         self._vars["retry_wait_min"].set(action.retry_wait_min)
@@ -246,13 +191,20 @@ class ClickImageDialog(StepDialogBase):
         self._vars["drag_offset_y"].set(action.drag_offset_y)
         self._vars["save_coord_name"].set(action.save_coord_name)
         self._on_found_action_changed()
-        self._update_preview()
         self._add_common_fields(self._content_frame, self._common_row, action)
 
     def _get_result(self) -> BaseStep:
         step = self._action or ClickImageStep()
-        step.image_path = self._vars["image_path"].get()
-        step.threshold = self._get_float("threshold", min_val=0.0, max_val=1.0, default=0.8)
+        (
+            image_path, alt_paths, alt_thresholds,
+            mode, strategy, global_threshold,
+        ) = self._mt_editor.get_state()
+        step.image_path = image_path
+        step.alt_image_paths = alt_paths
+        step.alt_thresholds = alt_thresholds
+        step.threshold_mode = mode
+        step.match_strategy = strategy
+        step.threshold = global_threshold
         step.retry_count = self._get_int("retry_count", min_val=0, default=3)
         step.retry_wait_min = self._get_float("retry_wait_min", min_val=0.0, default=0.5)
         step.retry_wait_max = self._get_float("retry_wait_max", min_val=0.0, default=1.5)
