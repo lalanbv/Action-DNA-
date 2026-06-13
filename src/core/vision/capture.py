@@ -316,6 +316,7 @@ class ScreenCapture:
 
 class _MatchCacheEntry(NamedTuple):
     result: tuple[int, int, int, int] | None
+    score: float          # 该次匹配的最佳置信度(rect 为 None 时仍记录,供 find_with_score 返回)
     timestamp: float
 
 
@@ -559,10 +560,37 @@ class TemplateMatcher:
         threshold: float = 0.8,
         screen_hash: int | None = None,
     ) -> tuple[int, int, int, int] | None:
-        """多尺度 + 多策略模板匹配（彩色 → 灰度 → 边缘），返回最佳匹配
+        """多尺度 + 多策略模板匹配（向后兼容入口,签名与返回值不变）。"""
+        rect, _score, _from_cache = self._find_core(screen, template_path, threshold, screen_hash)
+        return rect
 
+    def find_with_score(
+        self,
+        screen: np.ndarray,
+        template_path: str,
+        threshold: float = 0.8,
+        screen_hash: int | None = None,
+    ) -> tuple[tuple[int, int, int, int] | None, float]:
+        """单模板匹配,返回 (rect, best_confidence)。
+
+        rect 为 None 时 best_confidence 仍返回该次匹配的最高分
+        (供多模板策略判断与日志)。
+        """
+        rect, score, _from_cache = self._find_core(screen, template_path, threshold, screen_hash)
+        return rect, score
+
+    def _find_core(
+        self,
+        screen: np.ndarray,
+        template_path: str,
+        threshold: float = 0.8,
+        screen_hash: int | None = None,
+    ) -> tuple[tuple[int, int, int, int] | None, float, bool]:
+        """匹配核心,返回 (rect, best_score, from_cache)。
+
+        多尺度 + 多策略模板匹配（彩色 → 灰度 → 边缘）。
         使用边缘填充 (BORDER_REPLICATE) 确保屏幕边缘的 UI 元素也能被匹配。
-        带 LRU 缓存：相同截图+模板时直接返回缓存结果。
+        带 LRU 缓存：相同截图+模板时直接返回缓存结果(含 score)。
         """
         tpl = self.load_template(template_path)
         th, tw = tpl.shape[:2]
@@ -579,14 +607,14 @@ class TemplateMatcher:
                 if now - entry.timestamp < ttl:
                     self._match_cache.move_to_end(cache_key)
                     log.debug(t("vision.log.cache_hit", name=name))
-                    return entry.result
+                    return entry.result, entry.score, True
                 # TTL 过期，淘汰旧条目
                 del self._match_cache[cache_key]
 
         with self._entries_lock:
             tpl_entry = self._entries.get(template_path)
             if tpl_entry is None:
-                return None
+                return None, 0.0, False
             tpl_pp = tpl_entry.preprocessed
             tpl_gray = tpl_entry.gray
 
@@ -670,8 +698,8 @@ class TemplateMatcher:
             # 边缘匹配后仍未找到
             if best_match is None or best_val < threshold:
                 log.info(t("vision.log.template_too_large", name=name, tw=tw, th=th, sw=sw, sh=sh))
-                self._put_match_cache(cache_key, None)
-                return None
+                self._put_match_cache(cache_key, None, best_val)
+                return None, best_val, False
 
         val, x, y, w, h, best_scale, strategy = best_match
 
@@ -695,25 +723,25 @@ class TemplateMatcher:
                     log.info(
                         t("vision.log.no_match_verify", name=name, score=f"{val:.2f}", strategy=strategy)
                     )
-                    self._put_match_cache(cache_key, None)
-                    return None
+                    self._put_match_cache(cache_key, None, best_val)
+                    return None, best_val, False
 
             log.info(
                 t("vision.log.match_found", name=name, score=f"{val:.2f}", scale=best_scale,
                   strategy=strategy, x=orig_x, y=orig_y, w=w, h=h)
             )
             result = (orig_x, orig_y, w, h)
-            self._put_match_cache(cache_key, result)
-            return result
+            self._put_match_cache(cache_key, result, best_val)
+            return result, best_val, False
 
         log.info(t("vision.log.no_match", name=name, score=f"{val:.2f}", tw=tw, th=th, sw=sw, sh=sh, strategy=strategy))
-        self._put_match_cache(cache_key, None)
-        return None
+        self._put_match_cache(cache_key, None, best_val)
+        return None, best_val, False
 
-    def _put_match_cache(self, key: tuple[int, str, float], result: tuple[int, int, int, int] | None) -> None:
-        """写入 LRU 匹配缓存，超限时淘汰最旧条目。"""
+    def _put_match_cache(self, key: tuple[int, str, float], result: tuple[int, int, int, int] | None, score: float) -> None:
+        """写入 LRU 匹配缓存(含 score),超限时淘汰最旧条目。"""
         with self._match_cache_lock:
-            self._match_cache[key] = _MatchCacheEntry(result, time.monotonic())
+            self._match_cache[key] = _MatchCacheEntry(result, score, time.monotonic())
             if len(self._match_cache) > self.MATCH_CACHE_SIZE:
                 self._match_cache.popitem(last=False)
 
