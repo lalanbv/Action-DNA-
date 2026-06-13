@@ -68,3 +68,29 @@ class DetectMode(Enum):
         return None
 
 
+class MatchStrategy(Enum):
+    """多模板匹配编排策略。
+
+    ADAPTIVE 智能混合(默认):顺序优先 + 高确信提前退出,模糊态取全局最佳。
+    FIRST_MATCH 纯顺序优先:第一个命中即返回。
+    BEST_CONFIDENCE 纯全局最佳:总是扫完全部取最高置信度。
+    """
+
+    ADAPTIVE = "ADAPTIVE"
+    FIRST_MATCH = "FIRST_MATCH"
+    BEST_CONFIDENCE = "BEST_CONFIDENCE"
+
+
+class ThresholdMode(Enum):
+    """阈值模式。
+
+    AUTO 智能零配置:忽略阈值,用 AUTO_THRESHOLD 常量 + verify 兜底。
+    GLOBAL 统一阈值:所有模板共用 threshold(旧行为)。
+    PER_TEMPLATE 逐模板:基础 threshold + 每模板可选覆盖。
+    """
+
+    AUTO = "AUTO"
+    GLOBAL = "GLOBAL"
+    PER_TEMPLATE = "PER_TEMPLATE"
+
+
