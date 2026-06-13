@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import ClassVar, Union
 
-from src.core.action import ActionType, DetectMode, FoundAction
+from src.core.action import ActionType, DetectMode, FoundAction, MatchStrategy, ThresholdMode
 from src.utils.i18n import t
 
 
@@ -57,6 +57,15 @@ class ClickImageStep(BaseStep):
     drag_offset_x: int = 0
     drag_offset_y: int = 0
     hold_duration: float = 0.5
+    # ── 多模板字段(增量式,旧 profile 零修改兼容)──
+    # 备用模板路径(状态变体);主图 image_path 永远第一个,顺序 = 命中优先级
+    alt_image_paths: list[str] = field(default_factory=list)
+    # 与 alt_image_paths 平行;None = 继承全局/自动;具体浮点 = 独立覆盖
+    alt_thresholds: list[float | None] = field(default_factory=list)
+    # 匹配编排策略
+    match_strategy: MatchStrategy = MatchStrategy.ADAPTIVE
+    # 阈值模式(数据模型默认 GLOBAL,保旧 profile 零漂移;对话框新建默认 AUTO)
+    threshold_mode: ThresholdMode = ThresholdMode.GLOBAL
 
     def describe(self) -> str:
 
