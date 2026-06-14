@@ -23,8 +23,8 @@ from src.core.container import ServiceContainer
 from src.panel.app_mixin import ServiceProviderMixin
 from src.panel.pages.page_registry import PAGE_HOME, PAGE_ACTION_CHAIN, PAGE_WORKFLOW_EDITOR
 from src.panel.canvas.theme import (
-    current_theme, current_theme_mode, ThemeCallbackMixin,
-    resolved_theme_mode, set_theme_mode,
+    ThemeCallbackMixin, SystemThemeSync,
+    current_theme, restore_from_config,
 )
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.panel.qt_backend.theme import theme_to_qss
@@ -109,14 +109,10 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         # 定时器调度器
         self._timer = QtTimerScheduler()
 
-        # 主题
+        # 主题 — 从持久化配置恢复（D2：委托共享 helper）
         from src.core.config import load_config
         self._cfg = load_config()
-        mode = self._cfg.editor.theme_mode
-        if mode in ("dark", "light", "system"):
-            set_theme_mode(mode)
-        else:
-            set_theme_mode("system")
+        restore_from_config(self._cfg)
 
         # 语言
         from src.utils.i18n import set_language
@@ -134,7 +130,8 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._executor_source_page: str | None = None
         self._last_exec_running: bool | None = None
         self._monitor_timer: QTimer | None = None
-        self._sys_theme_timer: QTimer | None = None
+        self._theme_sync_backend: QtThemeSyncBackend | None = None
+        self._theme_sync: SystemThemeSync | None = None
 
         # 页面导航 — 使用 QStackedWidget
         self._stack = QStackedWidget()
@@ -151,9 +148,12 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         # 首页
         self.navigate_to(PAGE_HOME)
 
-        # 系统主题轮询
-        self._last_resolved: str = resolved_theme_mode()
-        self._start_system_theme_poller()
+        # 系统主题同步（D1 + B3：委托共享 SystemThemeSync + Qt 实时信号）
+        from src.panel.qt_backend.theme_sync_backend import QtThemeSyncBackend
+        self._theme_sync_backend = QtThemeSyncBackend(self)
+        self._theme_sync = SystemThemeSync()
+        self._theme_sync.start(self._theme_sync_backend)
+        self._theme_sync_backend.connect_real_time()
 
         # 延迟初始化重型服务
         self._timer.schedule(50, self._init_services_phase1)
@@ -278,7 +278,6 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
     def _on_theme_changed(self) -> None:
         """主题切换时重新配置全局样式，并强制所有页面（含缓存）更新。"""
         self._apply_theme()
-        self._last_resolved = resolved_theme_mode()
         th = current_theme()
         self._set_status_label_color(th.text_muted)
         self._status_dot.set_color(th.status_ready)
@@ -296,19 +295,6 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             self._status_bar.setStyleSheet(
                 f"background-color: {th.bg_surface}; border-top: 1px solid {th.border_default};"
             )
-
-    def _start_system_theme_poller(self) -> None:
-        self._sys_theme_timer = QTimer(self)
-        self._sys_theme_timer.setInterval(30000)
-        self._sys_theme_timer.timeout.connect(self._poll_system_theme)
-        self._sys_theme_timer.start()
-
-    def _poll_system_theme(self) -> None:
-        if current_theme_mode() == "system":
-            resolved = resolved_theme_mode()
-            if resolved != self._last_resolved:
-                self._last_resolved = resolved
-                set_theme_mode("system")
 
     # ── 全局状态栏 ──
 
@@ -515,9 +501,8 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         顺序：回调/轮询 → 热键 → 执行器 → 插件 → 截图 → 缓存
         """
         self._unregister_theme_callback()
-        if self._sys_theme_timer:
-            self._sys_theme_timer.stop()
-            self._sys_theme_timer = None
+        if self._theme_sync is not None:
+            self._theme_sync.stop()
         if self._monitor_timer:
             self._monitor_timer.stop()
             self._monitor_timer = None
@@ -544,8 +529,8 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         """窗口关闭时清理资源。"""
         try:
             self._unregister_theme_callback()
-            if self._sys_theme_timer:
-                self._sys_theme_timer.stop()
+            if self._theme_sync is not None:
+                self._theme_sync.stop()
             if self._monitor_timer:
                 self._monitor_timer.stop()
             self._stop_pulse()
