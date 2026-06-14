@@ -245,3 +245,64 @@ def test_export_converts_monitor_alt_abs_to_rel(tmp_path):
     md = d["monitors"][0]
     assert md["alt_image_paths"] == [os.path.relpath(abs_t2, profile_dir)]
     assert md["alt_handler_image_paths"] == [os.path.relpath(abs_h2, profile_dir)]
+
+
+# ── profile_manager 拷贝 Condition + Monitor alt 图片 ────────
+
+def _png(path):
+    import cv2
+    import numpy as np
+    img = np.zeros((10, 10, 3), dtype=np.uint8)
+    cv2.imwrite(path, img)
+    return path
+
+
+def test_profile_save_copies_condition_alt_images(tmp_path):
+    from src.core.condition import Condition, ConditionType
+    from src.core.flow import FlowGraph, FlowNode, NodeType
+    from src.panel.profile_manager import ProfileManager
+    from unittest.mock import patch
+    root = str(tmp_path / "profiles")
+    with patch("src.panel.profile_manager.get_profiles_dir", return_value=root):
+        pm = ProfileManager()
+    src_alt = _png(str(tmp_path / "cond_alt.png"))
+    cond = Condition(
+        condition_type=ConditionType.IMAGE_FOUND,
+        image_path=_png(str(tmp_path / "a.png")),
+        alt_image_paths=[src_alt],
+    )
+    node = FlowNode(node_id="n1", node_type=NodeType.ACTION, condition=cond)
+    graph = FlowGraph(name="g", start_node_id="n1", nodes={"n1": node})
+    profile_dir = pm.save("p1", graph)
+    with open(os.path.join(profile_dir, "profile.json"), encoding="utf-8") as f:
+        data = json.load(f)
+    cond_alt = data["flow"]["nodes"][0]["condition"]["alt_image_paths"][0]
+    # 存为相对 profile_dir 的路径,且图片确实拷贝到 images/
+    assert not os.path.isabs(cond_alt)
+    assert os.path.exists(os.path.join(profile_dir, cond_alt))
+
+
+def test_profile_save_copies_monitor_alt_images(tmp_path):
+    from src.core.flow import FlowGraph
+    from src.core.monitor import MonitorConfig
+    from src.panel.profile_manager import ProfileManager
+    from unittest.mock import patch
+    root = str(tmp_path / "profiles")
+    with patch("src.panel.profile_manager.get_profiles_dir", return_value=root):
+        pm = ProfileManager()
+    src_t2 = _png(str(tmp_path / "t2.png"))
+    src_h2 = _png(str(tmp_path / "h2.png"))
+    graph = FlowGraph(name="g", start_node_id="")
+    graph.monitors.append(MonitorConfig(
+        name="m",
+        image_path=_png(str(tmp_path / "t.png")),
+        handler_image_path=_png(str(tmp_path / "h.png")),
+        alt_image_paths=[src_t2], alt_handler_image_paths=[src_h2],
+    ))
+    profile_dir = pm.save("p2", graph)
+    with open(os.path.join(profile_dir, "profile.json"), encoding="utf-8") as f:
+        data = json.load(f)
+    md = data["flow"]["monitors"][0]
+    assert not os.path.isabs(md["alt_image_paths"][0])
+    assert os.path.exists(os.path.join(profile_dir, md["alt_image_paths"][0]))
+    assert os.path.exists(os.path.join(profile_dir, md["alt_handler_image_paths"][0]))

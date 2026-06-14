@@ -161,6 +161,12 @@ class ProfileManager:
                 node_dict["condition"]["image_path"] = self._copy_image(
                     node.condition.image_path, profile_dir, images_dir
                 )
+            # 多模板备用图(Condition):逐个拷贝到 images/ 并存相对路径
+            if node.condition and node.condition.alt_image_paths and "condition" in node_dict:
+                node_dict["condition"]["alt_image_paths"] = [
+                    self._copy_image(p, profile_dir, images_dir)
+                    for p in node.condition.alt_image_paths
+                ]
             nodes_data.append(node_dict)
 
         # 序列化边
@@ -174,6 +180,18 @@ class ProfileManager:
                 mon_dict["image_path"] = self._copy_image(mon.image_path, profile_dir, images_dir)
             if mon.handler_image_path:
                 mon_dict["handler_image_path"] = self._copy_image(mon.handler_image_path, profile_dir, images_dir)
+            # 多模板备用图(Monitor 触发图):逐个拷贝到 images/ 并存相对路径
+            if mon.alt_image_paths:
+                mon_dict["alt_image_paths"] = [
+                    self._copy_image(p, profile_dir, images_dir)
+                    for p in mon.alt_image_paths
+                ]
+            # 多模板备用图(Monitor 处理图)
+            if mon.alt_handler_image_paths:
+                mon_dict["alt_handler_image_paths"] = [
+                    self._copy_image(p, profile_dir, images_dir)
+                    for p in mon.alt_handler_image_paths
+                ]
             monitors_data.append(mon_dict)
 
         profile_data = {
