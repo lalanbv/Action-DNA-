@@ -8,11 +8,17 @@ import tkinter as tk
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import ttk
+from typing import Callable
 
 from src.core.container import ServiceContainer
 from src.panel.app_mixin import ServiceProviderMixin
 from src.panel.canvas.scale import scale_manager
-from src.panel.canvas.theme import current_theme, current_theme_mode, ThemeCallbackMixin, resolved_theme_mode, set_theme_mode
+from src.panel.canvas.theme import (
+    ThemeCallbackMixin,
+    SystemThemeSync,
+    current_theme,
+    restore_from_config,
+)
 from src.panel.pages.base_page import BasePage
 from src.panel.pages.page_registry import PAGE_HOME, PAGE_ACTION_CHAIN, PAGE_WORKFLOW_EDITOR, PageRegistry, DEFERRED_PAGE_MODULES
 from src.panel.tk_timer import TkTimerScheduler
@@ -47,14 +53,10 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         self.root.geometry(f"{init_w}x{init_h}")
         self.root.minsize(sm.s(640), sm.s(480))
 
-        # 主题 — 先从持久化配置恢复模式，再构建主题
+        # 主题 — 从持久化配置恢复模式（D2：委托共享 helper）
         from src.core.config import load_config
         self._cfg = load_config()
-        mode = self._cfg.editor.theme_mode
-        if mode in ("dark", "light", "system"):
-            set_theme_mode(mode)
-        else:
-            set_theme_mode("system")
+        restore_from_config(self._cfg)
         # 语言 — 从持久化配置恢复语言偏好
         from src.utils.i18n import set_language
         if self._cfg.language.language in ("zh", "en"):
@@ -95,10 +97,9 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         # 首页（不依赖重型服务）
         self.navigate_to(PAGE_HOME)
 
-        # 系统主题轮询（当模式为 "system" 时检测 OS 主题变化）
-        self._sys_poll_id: str | None = None
-        self._last_resolved: str = resolved_theme_mode()
-        self._start_system_theme_poller()
+        # 系统主题同步（D1：委托共享 SystemThemeSync，注入 tk 原语）
+        self._theme_sync = SystemThemeSync()
+        self._theme_sync.start(_TkThemeSyncBackend(self))
 
         # 延迟注册其余页面模块（避免启动时加载重型依赖阻塞 UI）
         self._timer.schedule(0, self._register_deferred_pages)
@@ -340,21 +341,6 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         self._global_dot.configure(bg=th.bg_surface)
         self._global_label.configure(bg=th.bg_surface)
         self._global_dot.itemconfig(self._dot_oval, fill=th.status_ready)
-        self._last_resolved = resolved_theme_mode()
-
-    def _start_system_theme_poller(self) -> None:
-        """当模式为 system 时，每 30 秒检测 OS 主题变化"""
-        if current_theme_mode() == "system":
-            resolved = resolved_theme_mode()
-            if resolved != self._last_resolved:
-                self._last_resolved = resolved
-                set_theme_mode("system")
-        self._sys_poll_id = self._timer.schedule(30000, self._start_system_theme_poller)
-
-    def _stop_system_theme_poller(self) -> None:
-        if self._sys_poll_id is not None:
-            self._timer.cancel(self._sys_poll_id)
-            self._sys_poll_id = None
 
     def _setup_monitor_events(self) -> None:
         """订阅监控事件以显示 Toast 通知。"""
@@ -563,7 +549,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         热键和执行器必须在最前面释放，否则新进程无法注册同一系统热键。
         """
         self._unregister_theme_callback()
-        self._stop_system_theme_poller()
+        self._theme_sync.stop()
         self._stop_monitor_poll()
         self._stop_pulse()
         if self.hotkey_manager:
@@ -595,7 +581,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         """
         try:
             self._unregister_theme_callback()
-            self._stop_system_theme_poller()
+            self._theme_sync.stop()
             self._stop_monitor_poll()
             if self._current_page:
                 self._current_page.destroy()
@@ -614,5 +600,29 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
                 self.matcher.clear_cache()
         finally:
             self.root.destroy()
+
+
+class _TkThemeSyncBackend:
+    """tkinter 主题同步原语 — marshal 用 root.after(0)，定时器用 TkTimerScheduler。
+
+    实现 theme_sync.ThemeSyncBackend Protocol。
+    """
+
+    def __init__(self, app: "PanelApp") -> None:
+        self._app = app
+
+    def marshal_main(self, fn: Callable[[], None]) -> None:
+        """回 UI 主线程：root.after(0) 在 widget 仍存活时调度。"""
+        try:
+            if self._app.root.winfo_exists():
+                self._app.root.after(0, fn)
+        except tk.TclError:
+            pass
+
+    def start_timer(self, interval_ms: int, fn: Callable[[], None]) -> str:
+        return self._app._timer.schedule(interval_ms, fn)
+
+    def stop_timer(self, handle: object) -> None:
+        self._app._timer.cancel(handle)
 
 
