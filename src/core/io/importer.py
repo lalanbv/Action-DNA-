@@ -223,10 +223,29 @@ def _graph_to_v2_dict(graph: FlowGraph, profile_dir: str) -> dict:
                 os.path.relpath(p, profile_dir) if os.path.isabs(p) else p
                 for p in node.action.alt_image_paths
             ]
+        # 多模板备用图(Condition):绝对路径 → 相对 profile_dir
+        if node.condition and node.condition.alt_image_paths and "condition" in nd:
+            nd["condition"]["alt_image_paths"] = [
+                os.path.relpath(p, profile_dir) if os.path.isabs(p) else p
+                for p in node.condition.alt_image_paths
+            ]
         nodes_data.append(nd)
 
     edges_data = [flow_edge_to_dict(e) for e in graph.edges]
     monitors_data = [monitor_to_dict(m) for m in graph.monitors]
+
+    # 多模板备用图(Monitor):绝对路径 → 相对 profile_dir
+    for mon, md in zip(graph.monitors, monitors_data):
+        if mon.alt_image_paths:
+            md["alt_image_paths"] = [
+                os.path.relpath(p, profile_dir) if os.path.isabs(p) else p
+                for p in mon.alt_image_paths
+            ]
+        if mon.alt_handler_image_paths:
+            md["alt_handler_image_paths"] = [
+                os.path.relpath(p, profile_dir) if os.path.isabs(p) else p
+                for p in mon.alt_handler_image_paths
+            ]
 
     return {
         "name": graph.name,

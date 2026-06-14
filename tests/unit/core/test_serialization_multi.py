@@ -206,3 +206,42 @@ def test_dict_to_monitor_backward_compat():
     assert mon.alt_image_paths == []
     assert mon.alt_handler_image_paths == []
     assert mon.threshold_mode == ThresholdMode.GLOBAL
+
+
+# ── 导出(importer)Condition + Monitor alt abs→rel ─────────
+
+def test_export_converts_condition_alt_abs_to_rel(tmp_path):
+    from src.core.condition import Condition, ConditionType
+    from src.core.flow import FlowGraph, FlowNode, NodeType
+    from src.core.io.importer import _graph_to_v2_dict
+    profile_dir = str(tmp_path)
+    abs_b = os.path.join(profile_dir, "cond_alt.png")
+    cond = Condition(
+        condition_type=ConditionType.IMAGE_FOUND,
+        image_path=os.path.join(profile_dir, "a.png"),
+        alt_image_paths=[abs_b],
+    )
+    node = FlowNode(node_id="n1", node_type=NodeType.ACTION, condition=cond)
+    graph = FlowGraph(name="g", start_node_id="n1", nodes={"n1": node})
+    d = _graph_to_v2_dict(graph, profile_dir)
+    cond_dict = d["nodes"][0]["condition"]
+    assert cond_dict["alt_image_paths"] == [os.path.relpath(abs_b, profile_dir)]
+
+
+def test_export_converts_monitor_alt_abs_to_rel(tmp_path):
+    from src.core.flow import FlowGraph
+    from src.core.monitor import MonitorConfig
+    from src.core.io.importer import _graph_to_v2_dict
+    profile_dir = str(tmp_path)
+    abs_t2 = os.path.join(profile_dir, "t2.png")
+    abs_h2 = os.path.join(profile_dir, "h2.png")
+    graph = FlowGraph(name="g", start_node_id="")
+    graph.monitors.append(MonitorConfig(
+        name="m", image_path=os.path.join(profile_dir, "t.png"),
+        handler_image_path=os.path.join(profile_dir, "h.png"),
+        alt_image_paths=[abs_t2], alt_handler_image_paths=[abs_h2],
+    ))
+    d = _graph_to_v2_dict(graph, profile_dir)
+    md = d["monitors"][0]
+    assert md["alt_image_paths"] == [os.path.relpath(abs_t2, profile_dir)]
+    assert md["alt_handler_image_paths"] == [os.path.relpath(abs_h2, profile_dir)]
