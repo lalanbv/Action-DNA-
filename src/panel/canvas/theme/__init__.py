@@ -15,11 +15,16 @@ from src.panel.canvas.theme.theme_manager import (
     current_theme,
     current_theme_mode,
     on_theme_change,
+    refresh_theme,
     remove_theme_change,
     resolved_theme_mode,
+    restore_from_config,
     set_theme_mode,
     theme_registry,
 )
+
+# ── 系统主题同步编排（D1 去重 + B1 worker 线程） ──
+from src.panel.canvas.theme.theme_sync import SystemThemeSync, ThemeSyncBackend
 
 # ── 颜色工具 ──
 from src.panel.canvas.theme.color_utils import (
@@ -56,10 +61,14 @@ __all__ = [
     "current_theme",
     "current_theme_mode",
     "on_theme_change",
+    "refresh_theme",
     "remove_theme_change",
     "resolved_theme_mode",
+    "restore_from_config",
     "set_theme_mode",
     "theme_registry",
+    "SystemThemeSync",
+    "ThemeSyncBackend",
     # 颜色工具
     "hex_to_rgb",
     "hex_to_rgba",
