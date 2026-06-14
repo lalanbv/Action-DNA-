@@ -5,11 +5,12 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog
 
-from src.core.action import FoundAction
+from src.core.action import FoundAction, MatchStrategy, ThresholdMode
 from src.core.monitor import MonitorConfig
 from src.panel.canvas.theme import current_theme
 from src.panel.dialogs._dialog_utils import make_dialog
 from src.panel.dialogs.click_image_dialog import _FOUND_ACTION_OPTIONS
+from src.panel.dialogs.multi_template_editor import MultiTemplateEditor
 from src.utils.paths import get_assets_dir
 from src.panel.widgets import themed_button, themed_checkbutton, themed_dropdown, themed_entry, themed_frame, themed_label, themed_separator, themed_spinbox
 from src.utils.i18n import t
@@ -26,14 +27,11 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
     th = current_theme()
     dlg = make_dialog(parent, title, 500, 520)
 
-    # 配置变量
+    # 配置变量(图片/阈值由多模板编辑器管理,此处只留其余字段)
     var_name = tk.StringVar(value=monitor.name)
     var_enabled = tk.BooleanVar(value=monitor.enabled)
-    var_image = tk.StringVar(value=monitor.image_path)
-    var_threshold = tk.DoubleVar(value=monitor.threshold)
     var_interval = tk.DoubleVar(value=monitor.check_interval)
     var_handler_action = tk.StringVar(value=monitor.handler_action.value)
-    var_handler_image = tk.StringVar(value=monitor.handler_image_path)
     var_max_consecutive = tk.IntVar(value=monitor.max_consecutive)
     var_cooldown = tk.DoubleVar(value=monitor.cooldown)
 
@@ -61,30 +59,13 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
     )
     row += 1
 
-    # 检测图片
-    themed_label(dlg, text=t("dialog.label.detect_image")).grid(row=row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    img_frame = themed_frame(dlg)
-    img_frame.grid(row=row, column=1, padx=th.pad_sm, pady=th.pad_xs, sticky=tk.EW)
-    themed_entry(img_frame, textvariable=var_image, width=22).pack(side=tk.LEFT, fill=tk.X, expand=True)
-    themed_button(img_frame, text=t("dialog.btn.browse"), command=lambda: _browse_image(var_image)).pack(side=tk.LEFT, padx=(th.pad_xs, 0))
-    row += 1
-
-    # 阈值
-    themed_label(dlg, text=t("dialog.label.match_threshold")).grid(row=row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    threshold_frame = themed_frame(dlg)
-    threshold_frame.grid(row=row, column=1, padx=th.pad_sm, pady=th.pad_xs, sticky=tk.W)
-    ttk.Scale(threshold_frame, from_=0.5, to=1.0, variable=var_threshold,
-              orient=tk.HORIZONTAL, length=150).pack(side=tk.LEFT)
-    var_threshold_display = tk.StringVar(value=f"{var_threshold.get():.2f}")
-
-    def _format_threshold(*_):
-        try:
-            var_threshold_display.set(f"{var_threshold.get():.2f}")
-        except tk.TclError:
-            pass
-
-    var_threshold.trace_add("write", _format_threshold)
-    themed_label(threshold_frame, textvariable=var_threshold_display, width=4).pack(side=tk.LEFT, padx=th.pad_xs)
+    # 触发图多模板管理器(完整:含阈值模式/策略/全局阈值)
+    trigger_editor = MultiTemplateEditor(dlg, on_change=None)
+    trigger_editor.set_state(
+        monitor.image_path, monitor.alt_image_paths, monitor.alt_thresholds,
+        monitor.threshold_mode, monitor.match_strategy, monitor.threshold,
+    )
+    trigger_editor.frame.grid(row=row, column=0, columnspan=2, sticky=tk.EW, padx=th.pad_sm, pady=th.pad_xs)
     row += 1
 
     # 检测间隔
@@ -114,12 +95,14 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
     handler_dropdown.grid(row=row, column=1, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
     row += 1
 
-    # 处理目标图片
-    themed_label(dlg, text=t("dialog.label.handler_target_image")).grid(row=row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    himg_frame = themed_frame(dlg)
-    himg_frame.grid(row=row, column=1, padx=th.pad_sm, pady=th.pad_xs, sticky=tk.EW)
-    themed_entry(himg_frame, textvariable=var_handler_image, width=22).pack(side=tk.LEFT, fill=tk.X, expand=True)
-    themed_button(himg_frame, text=t("dialog.btn.browse"), command=lambda: _browse_image(var_handler_image)).pack(side=tk.LEFT, padx=(th.pad_xs, 0))
+    # 处理图多模板管理器(精简:不显示模式/策略/全局阈值,共用触发图的)
+    handler_editor = MultiTemplateEditor(dlg, on_change=None, show_match_settings=False)
+    handler_editor.set_state(
+        monitor.handler_image_path, monitor.alt_handler_image_paths,
+        monitor.alt_handler_thresholds,
+        monitor.threshold_mode, monitor.match_strategy, monitor.threshold,
+    )
+    handler_editor.frame.grid(row=row, column=0, columnspan=2, sticky=tk.EW, padx=th.pad_sm, pady=th.pad_xs)
     row += 1
 
     themed_label(dlg, text=t("dialog.hint.optional_handler_image")).grid(
@@ -148,20 +131,30 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
     btn_frame.grid(row=row, column=0, columnspan=2, pady=th.pad_lg)
 
     def on_ok():
-        # 将显示值转换回 FoundAction 枚举
+        # 触发图状态(完整编辑器:含 mode/strategy/threshold)
+        (t_path, t_alts, t_thr, mode, strategy, threshold) = trigger_editor.get_state()
+        # 处理图状态(精简编辑器;mode/strategy 忽略,共用触发图的)
+        (h_path, h_alts, h_thr, _h_mode, _h_strategy, _h_gthr) = handler_editor.get_state()
+        # 处理动作
         handler_val = handler_dropdown.get_value()
         handler_action = FoundAction[handler_val] if handler_val in FoundAction.__members__ else FoundAction.LEFT_CLICK
 
         result = MonitorConfig(
             name=var_name.get().strip() or t("common.unnamed_monitor"),
             enabled=var_enabled.get(),
-            image_path=var_image.get().strip(),
-            threshold=var_threshold.get(),
+            image_path=t_path.strip(),
+            threshold=threshold,
             check_interval=var_interval.get(),
             handler_action=handler_action,
-            handler_image_path=var_handler_image.get().strip(),
+            handler_image_path=h_path.strip(),
             max_consecutive=var_max_consecutive.get(),
             cooldown=var_cooldown.get(),
+            alt_image_paths=t_alts,
+            alt_thresholds=t_thr,
+            alt_handler_image_paths=h_alts,
+            alt_handler_thresholds=h_thr,
+            match_strategy=strategy,
+            threshold_mode=mode,
         )
         dlg.destroy()
         on_done(result)
