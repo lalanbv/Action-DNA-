@@ -212,11 +212,17 @@ class TemplateMatchStep(VisionStep):
         threshold: float = 0.8,
         region: tuple[int, int, int, int] | None = None,
         scales: list[float] | None = None,
+        alt_template_paths: list[str] | None = None,
+        match_strategy: "MatchStrategy | None" = None,
     ) -> None:
         self._template_path = template_path
         self._threshold = threshold
         self._region = region
         self._scales = scales
+        # 多模板备用图(任一命中即视为找到);为空则走单模板/多尺度原路径(向后兼容)
+        self._alt_template_paths = list(alt_template_paths) if alt_template_paths else []
+        # 多模板编排策略;None → 默认 ADAPTIVE(在 _execute_multi 内归一)
+        self._match_strategy = match_strategy
 
     @property
     def name(self) -> str:
@@ -227,6 +233,10 @@ class TemplateMatchStep(VisionStep):
         if matcher is None:
             logger.warning("VisionPipeline 上下文缺少 _matcher，使用模块级懒加载实例")
             matcher = _get_default_matcher()
+
+        # 多模板:任一命中即视为找到(向后兼容:无 alt 时走单模板/多尺度原路径)
+        if self._alt_template_paths:
+            return self._execute_multi(screenshot, context, matcher)
 
         if self._scales is None:
             result = matcher.find(
@@ -244,6 +254,42 @@ class TemplateMatchStep(VisionStep):
             return out
 
         return self._execute_multiscale(screenshot, context, matcher)
+
+    def _execute_multi(self, screenshot: np.ndarray, context: dict, matcher: Any) -> dict:
+        """多模板匹配:主图 + 备用图 OR 匹配,命中即返回其位置。
+
+        在原始尺度匹配(不与多尺度叠加;符合规格 §7.1"多模板时走 find_any")。
+        """
+        from src.core.action import MatchStrategy, ThresholdMode
+        from src.core.vision.match_config import resolve_find_any_params
+
+        strategy = self._match_strategy if self._match_strategy is not None else MatchStrategy.ADAPTIVE
+        paths, per_thr, resolved_strategy = resolve_find_any_params(
+            primary_path=self._template_path,
+            alt_paths=self._alt_template_paths,
+            base_threshold=self._threshold,
+            alt_thresholds=[None] * len(self._alt_template_paths),
+            threshold_mode=ThresholdMode.GLOBAL,
+            match_strategy=strategy,
+        )
+        out = {**context}
+        if not paths:
+            out["template_result"] = _NOT_FOUND
+            out["last_match"] = _NOT_FOUND
+            return out
+        result = matcher.find_any(
+            screenshot, paths,
+            threshold=self._threshold,
+            strategy=resolved_strategy,
+            per_template_thresholds=per_thr,
+        )
+        if result is not None:
+            x, y, w, h = result.rect
+            out["template_result"] = _make_template_result(x, y, w, h)
+        else:
+            out["template_result"] = _NOT_FOUND
+        out["last_match"] = out["template_result"]
+        return out
 
     def _execute_multiscale(
         self,
