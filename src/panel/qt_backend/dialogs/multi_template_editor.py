@@ -28,15 +28,37 @@ class MultiTemplateEditorQt(QWidget):
     主图置顶不可删;备用图可增删、上下移动;阈值模式联动显隐。
     """
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, show_match_settings: bool = True) -> None:
         super().__init__(parent)
         self._rows: list[dict] = []
         self._primary_path = ""
+        # 统一状态源(控件只是视图);精简模式下不渲染控件但状态仍可读写
+        self._mode = ThresholdMode.GLOBAL
+        self._strategy = MatchStrategy.ADAPTIVE
+        self._global_threshold = 0.8
+        self._show_match_settings = show_match_settings
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # 控制区
+        if show_match_settings:
+            layout.addWidget(self._build_controls())
+
+        # 行容器
+        self._rows_layout = QVBoxLayout()
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self._rows_layout)
+
+        # 添加按钮 + 提示
+        bar = QHBoxLayout()
+        add_btn = QPushButton(t("dialog.multi_template.add"))
+        add_btn.clicked.connect(self._add_alt)
+        bar.addWidget(add_btn)
+        bar.addWidget(QLabel(t("dialog.multi_template.hint_order")))
+        layout.addLayout(bar)
+
+    def _build_controls(self) -> "QWidget":
+        """构建阈值模式/策略/全局阈值控制区(返回容器 QWidget)。"""
         ctrl = QWidget()
         cl = QVBoxLayout(ctrl)
         cl.setContentsMargins(0, 0, 0, 0)
@@ -72,34 +94,27 @@ class MultiTemplateEditorQt(QWidget):
         self._global_thr_sb.setRange(0.1, 1.0)
         self._global_thr_sb.setSingleStep(0.05)
         self._global_thr_sb.setDecimals(2)
+        self._global_thr_sb.valueChanged.connect(lambda v: setattr(self, "_global_threshold", v))
         r3.addWidget(self._global_thr_label)
         r3.addWidget(self._global_thr_sb)
         cl.addLayout(r3)
-        layout.addWidget(ctrl)
-
-        # 行容器
-        self._rows_layout = QVBoxLayout()
-        self._rows_layout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(self._rows_layout)
-
-        # 添加按钮 + 提示
-        bar = QHBoxLayout()
-        add_btn = QPushButton(t("dialog.multi_template.add"))
-        add_btn.clicked.connect(self._add_alt)
-        bar.addWidget(add_btn)
-        bar.addWidget(QLabel(t("dialog.multi_template.hint_order")))
-        layout.addLayout(bar)
+        return ctrl
 
     # ---- 模式联动 ----
 
     def _on_mode_changed(self) -> None:
+        if self._show_match_settings:
+            self._mode = self._mode_cb.currentData()
+            self._strategy = self._strategy_cb.currentData()
+            self._global_threshold = self._global_thr_sb.value()
         self._render_rows()
 
     def _apply_mode_visibility(self) -> None:
-        mode = self._mode_cb.currentData()
+        mode = self._mode
         show_global = mode != ThresholdMode.AUTO
-        self._global_thr_label.setVisible(show_global)
-        self._global_thr_sb.setVisible(show_global)
+        if self._show_match_settings:
+            self._global_thr_label.setVisible(show_global)
+            self._global_thr_sb.setVisible(show_global)
         for row in self._rows:
             row["thr_widget"].setVisible(mode == ThresholdMode.PER_TEMPLATE)
 
@@ -219,9 +234,13 @@ class MultiTemplateEditorQt(QWidget):
             }
             for i, p in enumerate(alt_paths)
         ]
-        self._mode_cb.setCurrentIndex(self._mode_cb.findData(mode))
-        self._strategy_cb.setCurrentIndex(self._strategy_cb.findData(strategy))
-        self._global_thr_sb.setValue(global_threshold)
+        self._mode = mode
+        self._strategy = strategy
+        self._global_threshold = global_threshold
+        if self._show_match_settings:
+            self._mode_cb.setCurrentIndex(self._mode_cb.findData(mode))
+            self._strategy_cb.setCurrentIndex(self._strategy_cb.findData(strategy))
+            self._global_thr_sb.setValue(global_threshold)
         self._render_rows()
 
     def get_state(self):
@@ -231,7 +250,7 @@ class MultiTemplateEditorQt(QWidget):
             self._primary_path,
             alt_paths,
             alt_thresholds,
-            self._mode_cb.currentData(),
-            self._strategy_cb.currentData(),
-            self._global_thr_sb.value(),
+            self._mode,
+            self._strategy,
+            self._global_threshold,
         )

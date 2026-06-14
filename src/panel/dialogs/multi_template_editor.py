@@ -48,15 +48,30 @@ class MultiTemplateEditor:
         state = editor.get_state()  # → (image_path, alts, thr, mode, strategy, gthr)
     """
 
-    def __init__(self, parent: tk.Widget, on_change: Callable[[], None] | None = None) -> None:
+    def __init__(
+        self,
+        parent: tk.Widget,
+        on_change: Callable[[], None] | None = None,
+        show_match_settings: bool = True,
+    ) -> None:
         self._th = current_theme()
         self._on_change = on_change
+        self._show_match_settings = show_match_settings
         self._frame = themed_frame(parent)
         self._rows: list[dict] = []
         self._photo_refs: list[object] = []
         self._primary_path_var = tk.StringVar()
         self._global_thr_var = tk.DoubleVar(value=0.8)
-        self._build_controls()
+        # 统一状态源:StringVar 永远存在;控件(show_match_settings=True)只是其视图
+        self._threshold_mode_var = tk.StringVar(value=ThresholdMode.GLOBAL.name)
+        self._match_strategy_var = tk.StringVar(value=MatchStrategy.ADAPTIVE.name)
+        # 控件引用(精简模式下保持 None,_apply_mode_visibility 据此守卫)
+        self._mode_dd = None
+        self._strategy_dd = None
+        self._global_thr_label = None
+        self._global_thr_sb = None
+        if show_match_settings:
+            self._build_controls()
         self._rows_frame = themed_frame(self._frame)
         self._rows_frame.pack(fill=tk.X)
         self._build_add_bar()
@@ -78,8 +93,8 @@ class MultiTemplateEditor:
         )
         self._mode_dd = themed_dropdown(
             ctrl, options=_THRESHOLD_MODE_OPTIONS,
-            value=ThresholdMode.GLOBAL.name, state="readonly", width=20,
-            command=lambda _v: self._on_mode_changed(),
+            value=self._threshold_mode_var.get(), state="readonly", width=20,
+            command=lambda _v: (self._threshold_mode_var.set(_v), self._on_mode_changed()),
         )
         self._mode_dd.grid(row=0, column=1, sticky=tk.W, padx=th.pad_xs)
 
@@ -88,7 +103,8 @@ class MultiTemplateEditor:
         )
         self._strategy_dd = themed_dropdown(
             ctrl, options=_MATCH_STRATEGY_OPTIONS,
-            value=MatchStrategy.ADAPTIVE.name, state="readonly", width=20,
+            value=self._match_strategy_var.get(), state="readonly", width=20,
+            command=lambda _v: self._match_strategy_var.set(_v),
         )
         self._strategy_dd.grid(row=1, column=1, sticky=tk.W, padx=th.pad_xs)
 
@@ -112,18 +128,19 @@ class MultiTemplateEditor:
     # ---- 模式联动 ----
 
     def _current_mode_name(self) -> str:
-        return self._mode_dd.get_value()
+        return self._threshold_mode_var.get()
 
     def _apply_mode_visibility(self) -> None:
         mode = self._current_mode_name()
         show_global = mode != ThresholdMode.AUTO.name
-        # 全局阈值框(控件的 grid 管理器,grid_remove 不冲突)
-        if show_global:
-            self._global_thr_label.grid()
-            self._global_thr_sb.grid()
-        else:
-            self._global_thr_label.grid_remove()
-            self._global_thr_sb.grid_remove()
+        # 全局阈值框仅在控制区渲染时存在(精简模式跳过)
+        if self._global_thr_label is not None and self._global_thr_sb is not None:
+            if show_global:
+                self._global_thr_label.grid()
+                self._global_thr_sb.grid()
+            else:
+                self._global_thr_label.grid_remove()
+                self._global_thr_sb.grid_remove()
         # 每行阈值单元的显隐由 _render_rows 按模式重建(避免 pack/grid 混用)
 
     def _on_mode_changed(self) -> None:
@@ -259,9 +276,14 @@ class MultiTemplateEditor:
             self._make_row(p, alt_thresholds[i] if i < len(alt_thresholds) else None)
             for i, p in enumerate(alt_paths)
         ]
-        self._mode_dd.set_value(mode.name)
-        self._strategy_dd.set_value(strategy.name)
+        self._threshold_mode_var.set(mode.name)
+        self._match_strategy_var.set(strategy.name)
         self._global_thr_var.set(global_threshold)
+        # 控件视图同步(精简模式下控件不存在,跳过)
+        if self._mode_dd is not None:
+            self._mode_dd.set_value(mode.name)
+        if self._strategy_dd is not None:
+            self._strategy_dd.set_value(strategy.name)
         self._render_rows()
 
     def get_state(self) -> tuple[str, list[str], list[float | None], ThresholdMode, MatchStrategy, float]:
@@ -279,8 +301,8 @@ class MultiTemplateEditor:
                     alt_thresholds.append(None)
             else:
                 alt_thresholds.append(None)
-        mode_name = self._mode_dd.get_value()
-        strategy_name = self._strategy_dd.get_value()
+        mode_name = self._threshold_mode_var.get()
+        strategy_name = self._match_strategy_var.get()
         mode = ThresholdMode[mode_name] if mode_name in ThresholdMode.__members__ else ThresholdMode.GLOBAL
         strategy = MatchStrategy[strategy_name] if strategy_name in MatchStrategy.__members__ else MatchStrategy.ADAPTIVE
         try:
