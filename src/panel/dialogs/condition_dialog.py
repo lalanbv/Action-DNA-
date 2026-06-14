@@ -3,10 +3,12 @@
 import tkinter as tk
 from tkinter import ttk, filedialog
 
+from src.core.action import MatchStrategy, ThresholdMode
 from src.core.condition import Condition, ConditionType
 from src.panel.canvas.scale import scale_manager
 from src.panel.canvas.theme import current_theme
 from src.panel.dialogs._dialog_utils import make_dialog
+from src.panel.dialogs.multi_template_editor import MultiTemplateEditor
 from src.panel.widgets import themed_button, themed_dropdown, themed_entry, themed_frame, themed_label, themed_labelframe, themed_radiobutton, themed_spinbox
 from src.utils.i18n import t
 
@@ -58,14 +60,23 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
     main.columnconfigure(1, weight=1)
 
     # 变量字典
-    var_image = tk.StringVar(value=condition.image_path)
-    var_threshold = tk.DoubleVar(value=condition.threshold)
     var_var_name = tk.StringVar(value=condition.variable_name)
     var_compare_op = tk.StringVar(value=condition.compare_op or "==")
     var_compare_x = tk.IntVar(value=condition.compare_value_x)
     var_compare_y = tk.IntVar(value=condition.compare_value_y)
     var_timer_name = tk.StringVar(value=condition.timer_name)
     var_timeout = tk.DoubleVar(value=condition.timeout_seconds)
+
+    # 图片条件多模板状态(跨 rebuild 保活:编辑器销毁前由 on_change 同步回此字典)
+    image_state = {
+        "image_path": condition.image_path,
+        "alt_paths": list(condition.alt_image_paths),
+        "alt_thresholds": list(condition.alt_thresholds),
+        "mode": condition.threshold_mode,
+        "strategy": condition.match_strategy,
+        "threshold": condition.threshold,
+    }
+    image_editor_holder: list = []  # 持当前编辑器实例(0 或 1 个;rebuild 时清空重建)
 
     # 复合条件子列表
     children_list: list[Condition] = list(condition.children) if condition.children else []
@@ -85,7 +96,7 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
 
         r = 0
         if selected in (ConditionType.IMAGE_FOUND, ConditionType.IMAGE_NOT_FOUND):
-            _build_image_fields(fields_frame, r, var_image, var_threshold)
+            _build_image_fields(fields_frame, r, image_state, image_editor_holder)
         elif selected == ConditionType.VARIABLE_EXISTS:
             _build_var_exists_fields(fields_frame, r, var_var_name)
         elif selected == ConditionType.VARIABLE_COMPARE:
@@ -160,10 +171,30 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
             ct = ConditionType[compound_mode] if compound_mode in ConditionType.__members__ else ConditionType.COMPOUND_AND
             result = Condition(condition_type=ct, children=list(children_list))
         else:
+            selected = _get_selected_type()
+            image_path, threshold, alt_paths, alt_thresholds = "", 0.8, [], []
+            mode = ThresholdMode.GLOBAL
+            strategy = MatchStrategy.ADAPTIVE
+            if selected in (ConditionType.IMAGE_FOUND, ConditionType.IMAGE_NOT_FOUND):
+                # 提交前从编辑器同步最新状态(若编辑器存在)
+                if image_editor_holder:
+                    (image_path, alt_paths, alt_thresholds,
+                     mode, strategy, threshold) = image_editor_holder[0].get_state()
+                else:
+                    image_path = image_state["image_path"]
+                    threshold = image_state["threshold"]
+                    alt_paths = image_state["alt_paths"]
+                    alt_thresholds = image_state["alt_thresholds"]
+                    mode = image_state["mode"]
+                    strategy = image_state["strategy"]
             result = Condition(
-                condition_type=_get_selected_type(),
-                image_path=var_image.get().strip(),
-                threshold=var_threshold.get(),
+                condition_type=selected,
+                image_path=image_path,
+                threshold=threshold,
+                alt_image_paths=alt_paths,
+                alt_thresholds=alt_thresholds,
+                match_strategy=strategy,
+                threshold_mode=mode,
                 variable_name=var_var_name.get().strip(),
                 compare_op=var_compare_op.get(),
                 compare_value_x=var_compare_x.get(),
@@ -180,23 +211,28 @@ def open_condition_dialog(parent, condition: Condition | None, title: str, on_do
 
 # ── 动态字段构建器 ──────────────────────────────────────────
 
-def _build_image_fields(parent, start_row, var_image, var_threshold):
-    """图片检测条件字段"""
+def _build_image_fields(parent, start_row, image_state, holder):
+    """图片检测条件字段 — 嵌入多模板管理器(主图 + 备用图 + 策略/阈值模式)。
+
+    编辑器变更通过 on_change 同步回 image_state,使其跨 rebuild(条件类型切换)保活。
+    """
     th = current_theme()
-    themed_label(parent, text=t("dialog.label.image_path")).grid(row=start_row, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    img_frame = themed_frame(parent)
-    img_frame.grid(row=start_row, column=1, sticky=tk.EW, padx=th.pad_sm, pady=th.pad_xs)
-    themed_entry(img_frame, textvariable=var_image, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
-    themed_button(img_frame, text=t("dialog.btn.browse"), command=lambda: _browse_cond_image(var_image)).pack(side=tk.LEFT, padx=(th.pad_xs, 0))
 
-    themed_label(parent, text=t("dialog.label.match_threshold")).grid(row=start_row + 1, column=0, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    thresh_frame = themed_frame(parent)
-    thresh_frame.grid(row=start_row + 1, column=1, sticky=tk.W, padx=th.pad_sm, pady=th.pad_xs)
-    ttk.Scale(thresh_frame, from_=0.5, to=1.0, variable=var_threshold,
-              orient=tk.HORIZONTAL, length=180).pack(side=tk.LEFT)
-    themed_label(thresh_frame, textvariable=var_threshold, width=5).pack(side=tk.LEFT, padx=th.pad_xs)
+    def _sync():
+        """编辑器 → image_state(每次变更即时同步,销毁/重建时不丢数据)。"""
+        (image_state["image_path"], image_state["alt_paths"],
+         image_state["alt_thresholds"], image_state["mode"],
+         image_state["strategy"], image_state["threshold"]) = editor.get_state()
 
+    editor = MultiTemplateEditor(parent, on_change=_sync)
+    editor.set_state(
+        image_state["image_path"], image_state["alt_paths"], image_state["alt_thresholds"],
+        image_state["mode"], image_state["strategy"], image_state["threshold"],
+    )
+    editor.frame.grid(row=start_row, column=0, columnspan=2, sticky=tk.EW, padx=th.pad_sm, pady=th.pad_xs)
     parent.columnconfigure(1, weight=1)
+    holder.clear()
+    holder.append(editor)
 
 
 def _build_var_exists_fields(parent, start_row, var_name):
