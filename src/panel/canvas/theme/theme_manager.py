@@ -175,6 +175,31 @@ def set_theme_mode(mode: str) -> None:
         _theme_callbacks.pop(cb_id, None)
 
 
+def refresh_theme() -> None:
+    """强制重建当前主题并通知所有订阅。
+
+    用于 system 模式下 OS 实际主题发生变化：不改变 ``_theme_mode``，
+    仅清除缓存、重建主题、触发全部回调，从而绕过 :func:`set_theme_mode`
+    在"模式未变"时的 skip 逻辑（B5 修复）。
+
+    必须在 UI 主线程调用（由 :class:`theme_sync.SystemThemeSync` 通过
+    ``ThemeSyncBackend.marshal_main`` 保证）。
+    """
+    global _current_theme
+    _current_theme = None
+    current_theme()  # 重建缓存
+
+    dead_ids: list[int] = []
+    # 快照遍历 —— 回调可能在迭代中调用 remove_theme_change。
+    for cb_id, cb in list(_theme_callbacks.items()):
+        try:
+            cb()
+        except Exception:
+            dead_ids.append(cb_id)
+    for cb_id in dead_ids:
+        _theme_callbacks.pop(cb_id, None)
+
+
 def _build_theme() -> CanvasTheme:
     """根据模式构建主题"""
     family = detect_font_family()
