@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
+from src.core.action import MatchStrategy, ThresholdMode
 from src.utils.i18n import t
 
 if TYPE_CHECKING:
@@ -61,6 +62,15 @@ class Condition:
     timer_name: str = ""
     # COMPOUND (AND / OR / NOT)
     children: list[Condition] = field(default_factory=list)
+    # ── 多模板字段(增量式,旧 profile 零修改兼容)──
+    # IMAGE_FOUND / IMAGE_NOT_FOUND 的备用模板(状态变体);主图 image_path 永远第一个
+    alt_image_paths: list[str] = field(default_factory=list)
+    # 与 alt_image_paths 平行;None = 继承全局/自动;具体浮点 = 独立覆盖
+    alt_thresholds: list[float | None] = field(default_factory=list)
+    # 匹配编排策略
+    match_strategy: MatchStrategy = MatchStrategy.ADAPTIVE
+    # 阈值模式(数据模型默认 GLOBAL,保旧 profile 零漂移;对话框新建默认 AUTO)
+    threshold_mode: ThresholdMode = ThresholdMode.GLOBAL
 
     def describe(self) -> str:
         """返回人类可读的条件描述"""
@@ -170,13 +180,33 @@ class ConditionEvaluator:
                 return False
 
     def _check_image_found(self, cond: Condition) -> bool:
-        """检查模板图片是否出现在屏幕上"""
+        """检查模板图片是否出现在屏幕上(支持多模板 OR 匹配)。
+
+        任一备用图命中即视为找到;全部未命中视为未找到。
+        IMAGE_NOT_FOUND 由 evaluate() 取反本方法结果,天然等价"全部未命中"。
+        """
         if not cond.image_path:
             return False
         try:
             screen = self._capture.grab_reuse()
-            rect = self._matcher.find(screen, cond.image_path, cond.threshold)
-            return rect is not None
+            from src.core.vision.match_config import resolve_find_any_params
+            paths, per_thr, strategy = resolve_find_any_params(
+                primary_path=cond.image_path,
+                alt_paths=cond.alt_image_paths,
+                base_threshold=cond.threshold,
+                alt_thresholds=cond.alt_thresholds,
+                threshold_mode=cond.threshold_mode,
+                match_strategy=cond.match_strategy,
+            )
+            if not paths:
+                return False
+            result = self._matcher.find_any(
+                screen, paths,
+                threshold=cond.threshold,
+                strategy=strategy,
+                per_template_thresholds=per_thr,
+            )
+            return result is not None
         except (FileNotFoundError, ValueError):
             return False
 
