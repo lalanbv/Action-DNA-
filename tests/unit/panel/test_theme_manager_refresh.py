@@ -83,3 +83,58 @@ def test_refresh_theme_does_not_change_mode(monkeypatch):
     refresh_theme()
 
     assert theme_manager._theme_mode == "system"
+
+
+from src.panel.canvas.theme.theme_manager import restore_from_config
+
+
+class _FakeEditor:
+    def __init__(self, mode: str) -> None:
+        self.theme_mode = mode
+
+
+class _FakeConfig:
+    def __init__(self, mode: str) -> None:
+        self.editor = _FakeEditor(mode)
+
+
+def test_restore_from_config_valid_mode(monkeypatch):
+    """合法 theme_mode 被恢复。"""
+    called = {}
+    monkeypatch.setattr(theme_manager, "set_theme_mode", lambda m: called.__setitem__("mode", m))
+
+    restore_from_config(_FakeConfig("dark"))
+
+    assert called == {"mode": "dark"}
+
+
+def test_restore_from_config_invalid_mode_falls_back(monkeypatch):
+    """非法 theme_mode 回退到 system。"""
+    called = {}
+    monkeypatch.setattr(theme_manager, "set_theme_mode", lambda m: called.__setitem__("mode", m))
+
+    restore_from_config(_FakeConfig("hot-pink"))
+
+    assert called == {"mode": "system"}
+
+
+def test_restore_from_config_accepts_system(monkeypatch):
+    called = {}
+    monkeypatch.setattr(theme_manager, "set_theme_mode", lambda m: called.__setitem__("mode", m))
+
+    restore_from_config(_FakeConfig("system"))
+
+    assert called == {"mode": "system"}
+
+
+def test_restore_from_config_missing_attr_falls_back(monkeypatch):
+    """editor.theme_mode 缺失时回退到 system。"""
+    called = {}
+    monkeypatch.setattr(theme_manager, "set_theme_mode", lambda m: called.__setitem__("mode", m))
+
+    class _Empty:
+        pass
+
+    restore_from_config(_Empty())
+
+    assert called == {"mode": "system"}

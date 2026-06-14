@@ -200,6 +200,22 @@ def refresh_theme() -> None:
         _theme_callbacks.pop(cb_id, None)
 
 
+def restore_from_config(cfg) -> None:
+    """从持久化配置恢复主题模式（D2 去重，供两后端共用）。
+
+    读取 ``cfg.editor.theme_mode``，合法值（dark/light/system）恢复，
+    非法或缺省回退到 ``system``。
+
+    Args:
+        cfg: 配置对象，需有 ``editor.theme_mode`` 属性。
+    """
+    mode = getattr(getattr(cfg, "editor", None), "theme_mode", None)
+    if mode in _VALID_THEME_MODES:
+        set_theme_mode(mode)
+    else:
+        set_theme_mode("system")
+
+
 def _build_theme() -> CanvasTheme:
     """根据模式构建主题"""
     family = detect_font_family()
