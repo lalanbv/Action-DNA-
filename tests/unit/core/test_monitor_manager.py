@@ -23,6 +23,8 @@ def mock_capture():
 def mock_matcher():
     m = MagicMock()
     m.find.return_value = None
+    # 多模板改用 find_any;默认"未命中"以保持单模板等价语义
+    m.find_any.return_value = None
     return m
 
 

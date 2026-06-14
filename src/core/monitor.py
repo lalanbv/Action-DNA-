@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
-from src.core.action import FoundAction
+from src.core.action import FoundAction, MatchStrategy, ThresholdMode
 from src.core.events.events import MonitorTriggeredEvent
 from src.core.logger import log
 from src.utils.i18n import t
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from src.core.monitor_manager import MonitorState
     from src.core.shared_frame_provider import SharedFrameProvider
     from src.core.vision import ScreenCapture, TemplateMatcher
+    from src.core.vision.capture import MultiMatchResult
 
 
 @dataclass
@@ -46,6 +47,17 @@ class MonitorConfig:
     priority: int = 0            # 优先级（高先检查）
     max_consecutive: int = 3     # 连续触发上限
     cooldown: float = 2.0        # 触发后冷却（秒）
+    # ── 多模板字段(增量式,旧 profile 零修改兼容)──
+    # 触发图备用模板(状态变体);主图 image_path 永远第一个
+    alt_image_paths: list[str] = field(default_factory=list)
+    alt_thresholds: list[float | None] = field(default_factory=list)
+    # 处理图备用模板;主图 handler_image_path 永远第一个(共用本节点 strategy/mode)
+    alt_handler_image_paths: list[str] = field(default_factory=list)
+    alt_handler_thresholds: list[float | None] = field(default_factory=list)
+    # 匹配编排策略(触发图 + 处理图共用一套)
+    match_strategy: MatchStrategy = MatchStrategy.ADAPTIVE
+    # 阈值模式(共用;数据模型默认 GLOBAL,保旧 profile 零漂移)
+    threshold_mode: ThresholdMode = ThresholdMode.GLOBAL
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -139,6 +151,35 @@ class BackgroundMonitor:
 
     # ---- 内部方法 ----
 
+    def _match_multi(
+        self,
+        screen: np.ndarray,
+        primary: str,
+        alt_paths: list[str],
+        alt_thresholds: list[float | None],
+    ) -> "MultiMatchResult | None":
+        """对一组模板(主图 + 备用图)做多模板匹配,返回命中结果或 None。
+
+        复用本节点共享的 threshold_mode / match_strategy,经 match_config 解析参数。
+        """
+        from src.core.vision.match_config import resolve_find_any_params
+        paths, per_thr, strategy = resolve_find_any_params(
+            primary_path=primary,
+            alt_paths=alt_paths,
+            base_threshold=self._config.threshold,
+            alt_thresholds=alt_thresholds,
+            threshold_mode=self._config.threshold_mode,
+            match_strategy=self._config.match_strategy,
+        )
+        if not paths:
+            return None
+        return self._matcher.find_any(
+            screen, paths,
+            threshold=self._config.threshold,
+            strategy=strategy,
+            per_template_thresholds=per_thr,
+        )
+
     def _run(self) -> None:
         """监控主循环"""
         while not self._stop_event.is_set():
@@ -172,15 +213,20 @@ class BackgroundMonitor:
 
         screen = self._grab_frame()
         try:
-            rect = self._matcher.find(screen, self._config.image_path, self._config.threshold)
+            trig_result = self._match_multi(
+                screen, self._config.image_path,
+                self._config.alt_image_paths, self._config.alt_thresholds,
+            )
         except (FileNotFoundError, ValueError):
             return
 
-        if rect is None:
+        if trig_result is None:
             with self._state_lock:
                 self._consecutive_count = 0
             self._push_state()
             return
+
+        rect = trig_result.rect
 
         now = time.monotonic()
 
@@ -213,11 +259,13 @@ class BackgroundMonitor:
         target_rect = rect
         if self._config.handler_image_path:
             try:
-                handler_rect = self._matcher.find(
-                    screen, self._config.handler_image_path, self._config.threshold
+                handler_result = self._match_multi(
+                    screen, self._config.handler_image_path,
+                    self._config.alt_handler_image_paths,
+                    self._config.alt_handler_thresholds,
                 )
-                if handler_rect:
-                    target_rect = handler_rect
+                if handler_result is not None:
+                    target_rect = handler_result.rect
             except (FileNotFoundError, ValueError):
                 pass
 
