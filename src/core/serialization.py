@@ -27,6 +27,24 @@ _FOUND_ACTION_MIGRATION = {
 }
 
 
+def _resolve_match_strategy(value) -> MatchStrategy:
+    """解析 MatchStrategy,未知值/None → ADAPTIVE(向前兼容)。"""
+    if isinstance(value, MatchStrategy):
+        return value
+    if isinstance(value, str) and value in MatchStrategy.__members__:
+        return MatchStrategy[value]
+    return MatchStrategy.ADAPTIVE
+
+
+def _resolve_threshold_mode(value) -> ThresholdMode:
+    """解析 ThresholdMode,未知值/None → GLOBAL(保旧 profile 零漂移)。"""
+    if isinstance(value, ThresholdMode):
+        return value
+    if isinstance(value, str) and value in ThresholdMode.__members__:
+        return ThresholdMode[value]
+    return ThresholdMode.GLOBAL
+
+
 def resolve_found_action(value: str) -> FoundAction:
     """解析 FoundAction，兼容旧版枚举名"""
     try:
@@ -120,6 +138,10 @@ def condition_to_dict(cond: Condition) -> dict:
         "compare_value_y": cond.compare_value_y,
         "timeout_seconds": cond.timeout_seconds,
         "timer_name": cond.timer_name,
+        "alt_image_paths": list(cond.alt_image_paths),
+        "alt_thresholds": list(cond.alt_thresholds),
+        "match_strategy": cond.match_strategy.name,
+        "threshold_mode": cond.threshold_mode.name,
     }
     if cond.children:
         d["children"] = [condition_to_dict(c) for c in cond.children]
@@ -141,6 +163,10 @@ def dict_to_condition(data: dict) -> Condition:
         compare_value_y=data.get("compare_value_y", 0),
         timeout_seconds=data.get("timeout_seconds", 0.0),
         timer_name=data.get("timer_name", ""),
+        alt_image_paths=list(data.get("alt_image_paths", [])),
+        alt_thresholds=list(data.get("alt_thresholds", [])),
+        match_strategy=_resolve_match_strategy(data.get("match_strategy")),
+        threshold_mode=_resolve_threshold_mode(data.get("threshold_mode")),
         children=children,
     )
 
@@ -196,6 +222,12 @@ def dict_to_flow_node(data: dict, profile_dir: str) -> FlowNode:
         if condition.image_path:
             abs_path = os.path.normpath(os.path.join(profile_dir, condition.image_path))
             condition.image_path = abs_path
+        # 多模板备用图:相对路径 → 绝对(与主图同一转换规则)
+        if condition.alt_image_paths:
+            condition.alt_image_paths = [
+                os.path.normpath(os.path.join(profile_dir, p)) if p else p
+                for p in condition.alt_image_paths
+            ]
 
     error_config = None
     if data.get("error_config") is not None:
@@ -264,6 +296,12 @@ def monitor_to_dict(mon: MonitorConfig) -> dict:
         "priority": mon.priority,
         "max_consecutive": mon.max_consecutive,
         "cooldown": mon.cooldown,
+        "alt_image_paths": list(mon.alt_image_paths),
+        "alt_thresholds": list(mon.alt_thresholds),
+        "alt_handler_image_paths": list(mon.alt_handler_image_paths),
+        "alt_handler_thresholds": list(mon.alt_handler_thresholds),
+        "match_strategy": mon.match_strategy.name,
+        "threshold_mode": mon.threshold_mode.name,
     }
 
 
@@ -281,6 +319,15 @@ def dict_to_monitor(data: dict, profile_dir: str) -> MonitorConfig:
         handler_image_path = os.path.normpath(
             os.path.join(profile_dir, handler_image_path)
         )
+    # 多模板备用图(触发图 + 处理图):相对路径 → 绝对(与主图同一转换规则)
+    alt_image_paths = [
+        os.path.normpath(os.path.join(profile_dir, p)) if p else p
+        for p in data.get("alt_image_paths", [])
+    ]
+    alt_handler_image_paths = [
+        os.path.normpath(os.path.join(profile_dir, p)) if p else p
+        for p in data.get("alt_handler_image_paths", [])
+    ]
 
     return MonitorConfig(
         name=data.get("name", ""),
@@ -293,4 +340,10 @@ def dict_to_monitor(data: dict, profile_dir: str) -> MonitorConfig:
         priority=data.get("priority", 0),
         max_consecutive=data.get("max_consecutive", 3),
         cooldown=data.get("cooldown", 2.0),
+        alt_image_paths=alt_image_paths,
+        alt_thresholds=list(data.get("alt_thresholds", [])),
+        alt_handler_image_paths=alt_handler_image_paths,
+        alt_handler_thresholds=list(data.get("alt_handler_thresholds", [])),
+        match_strategy=_resolve_match_strategy(data.get("match_strategy")),
+        threshold_mode=_resolve_threshold_mode(data.get("threshold_mode")),
     )
