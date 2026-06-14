@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QPushButton, QRadioButton, QSlider, QVBoxLayout, QWidget,
 )
 
+from src.core.action import MatchStrategy, ThresholdMode
 from src.core.condition import Condition, ConditionType
 from src.panel.canvas.theme import current_theme
 from src.panel.qt_backend.scale import qt_scale_manager
@@ -129,50 +130,16 @@ class QtConditionDialog(QDialog):
             self._build_time_fields(cond, sm)
 
     def _build_image_fields(self, cond: Condition, sm) -> None:
-        th = current_theme()
-        form = QFormLayout()
-        form.setSpacing(sm.s(4))
+        """图片条件字段 — 嵌入多模板管理器(主图 + 备用图 + 策略/阈值模式)。"""
+        from src.panel.qt_backend.dialogs.multi_template_editor import MultiTemplateEditorQt
 
-        img_row = QHBoxLayout()
-        self._image_entry = QLineEdit(cond.image_path)
-        self._image_entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {th.input_bg}; color: {th.text_primary};
-                border: 1px solid {th.border_default}; border-radius: {sm.s(3)}px;
-                padding: {sm.s(3)}px {sm.s(6)}px; min-width: {sm.s(220)}px;
-            }}
-        """)
-        img_row.addWidget(self._image_entry)
-        browse_btn = themed_button(self, text=t("dialog.btn.browse"), command=self._browse_image, style="secondary")
-        img_row.addWidget(browse_btn)
-        form.addRow(t("dialog.label.image_path"), img_row)
-
-        thresh_row = QHBoxLayout()
-        self._threshold_slider = QSlider(Qt.Horizontal)
-        self._threshold_slider.setRange(50, 100)
-        self._threshold_slider.setValue(int(cond.threshold * 100))
-        self._threshold_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                background: {th.border_default}; height: {sm.s(4)}px; border-radius: {sm.s(2)}px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {th.accent_blue}; width: {sm.s(14)}px; margin: -{sm.s(5)}px 0;
-                border-radius: {sm.s(7)}px;
-            }}
-        """)
-        thresh_row.addWidget(self._threshold_slider)
-        self._thresh_label = QLabel(f"{cond.threshold:.2f}")
-        self._thresh_label.setStyleSheet(f"color: {th.text_primary}; min-width: {sm.s(36)}px;")
-        thresh_row.addWidget(self._thresh_label)
-        self._threshold_slider.valueChanged.connect(
-            lambda v: self._thresh_label.setText(f"{v / 100:.2f}"),
+        self._image_editor = MultiTemplateEditorQt(parent=self)
+        self._image_editor.set_state(
+            cond.image_path, cond.alt_image_paths, cond.alt_thresholds,
+            cond.threshold_mode, cond.match_strategy, cond.threshold,
         )
-        form.addRow(t("dialog.label.match_threshold"), thresh_row)
-
-        container = QWidget()
-        container.setLayout(form)
-        self._fields_layout.addWidget(container)
-        self._fields_widgets.append(container)
+        self._fields_layout.addWidget(self._image_editor)
+        self._fields_widgets.append(self._image_editor)
 
     def _build_var_exists_fields(self, cond: Condition, sm) -> None:
         th = current_theme()
@@ -370,6 +337,10 @@ class QtConditionDialog(QDialog):
 
             image_path = ""
             threshold = 0.8
+            alt_paths: list[str] = []
+            alt_thresholds: list[float | None] = []
+            mode = ThresholdMode.GLOBAL
+            strategy = MatchStrategy.ADAPTIVE
             var_name = ""
             compare_op = ""
             val_x = 0
@@ -378,8 +349,9 @@ class QtConditionDialog(QDialog):
             timeout = 0.0
 
             if selected in (ConditionType.IMAGE_FOUND, ConditionType.IMAGE_NOT_FOUND):
-                image_path = self._image_entry.text().strip() if hasattr(self, "_image_entry") else ""
-                threshold = self._threshold_slider.value() / 100 if hasattr(self, "_threshold_slider") else 0.8
+                if hasattr(self, "_image_editor"):
+                    (image_path, alt_paths, alt_thresholds,
+                     mode, strategy, threshold) = self._image_editor.get_state()
             elif selected == ConditionType.VARIABLE_EXISTS:
                 var_name = self._var_name_entry.text().strip() if hasattr(self, "_var_name_entry") else ""
             elif selected == ConditionType.VARIABLE_COMPARE:
@@ -404,6 +376,10 @@ class QtConditionDialog(QDialog):
                 condition_type=selected,
                 image_path=image_path,
                 threshold=threshold,
+                alt_image_paths=alt_paths,
+                alt_thresholds=alt_thresholds,
+                match_strategy=strategy,
+                threshold_mode=mode,
                 variable_name=var_name,
                 compare_op=compare_op,
                 compare_value_x=val_x,

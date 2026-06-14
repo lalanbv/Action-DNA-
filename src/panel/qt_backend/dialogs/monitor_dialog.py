@@ -23,9 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.core.action import FoundAction
+from src.core.action import FoundAction, MatchStrategy, ThresholdMode
 from src.core.monitor import MonitorConfig
 from src.panel.qt_backend.dialogs._mappings import _FOUND_ACTION_I18N
+from src.panel.qt_backend.dialogs.multi_template_editor import MultiTemplateEditorQt
 from src.utils.i18n import t
 from src.utils.paths import get_assets_dir
 
@@ -57,23 +58,13 @@ class QtMonitorDialog(QDialog):
 
         form.addRow(QLabel(t("dialog.label.detection_config")))
 
-        img_row, self._image_edit = self._make_browse_row(monitor.image_path)
-        form.addRow(t("dialog.label.detect_image"), img_row)
-
-        threshold_row = QWidget()
-        th_lay = QHBoxLayout(threshold_row)
-        th_lay.setContentsMargins(0, 0, 0, 0)
-        self._threshold_slider = QSlider()
-        self._threshold_slider.setRange(50, 100)
-        self._threshold_slider.setValue(int(monitor.threshold * 100))
-        self._threshold_slider.setOrientation(Qt.Orientation.Horizontal)
-        th_lay.addWidget(self._threshold_slider)
-        self._threshold_label = QLabel(f"{monitor.threshold:.2f}")
-        self._threshold_slider.valueChanged.connect(
-            lambda v: self._threshold_label.setText(f"{v / 100:.2f}")
+        # 触发图多模板管理器(完整:含阈值模式/策略/全局阈值)
+        self._trigger_editor = MultiTemplateEditorQt(parent=self)
+        self._trigger_editor.set_state(
+            monitor.image_path, monitor.alt_image_paths, monitor.alt_thresholds,
+            monitor.threshold_mode, monitor.match_strategy, monitor.threshold,
         )
-        th_lay.addWidget(self._threshold_label)
-        form.addRow(t("dialog.label.match_threshold"), threshold_row)
+        form.addRow(t("dialog.label.detect_image"), self._trigger_editor)
 
         self._interval_spin = QDoubleSpinBox()
         self._interval_spin.setRange(0.5, 30.0)
@@ -95,8 +86,14 @@ class QtMonitorDialog(QDialog):
         self._action_combo.setCurrentIndex(idx)
         form.addRow(t("dialog.label.handler_action"), self._action_combo)
 
-        himg_row, self._handler_image_edit = self._make_browse_row(monitor.handler_image_path)
-        form.addRow(t("dialog.label.handler_target_image"), himg_row)
+        # 处理图多模板管理器(精简:不显示模式/策略/全局阈值,共用触发图的)
+        self._handler_editor = MultiTemplateEditorQt(parent=self, show_match_settings=False)
+        self._handler_editor.set_state(
+            monitor.handler_image_path, monitor.alt_handler_image_paths,
+            monitor.alt_handler_thresholds,
+            monitor.threshold_mode, monitor.match_strategy, monitor.threshold,
+        )
+        form.addRow(t("dialog.label.handler_target_image"), self._handler_editor)
         form.addRow(QLabel(t("dialog.hint.optional_handler_image")))
 
         self._max_consecutive_spin = QSpinBox()
@@ -148,16 +145,25 @@ class QtMonitorDialog(QDialog):
     def _on_ok(self) -> None:
         idx = self._action_combo.currentIndex()
         handler_action = self._action_data[idx] if 0 <= idx < len(self._action_data) else self._monitor.handler_action
+        # 触发图(完整编辑器:含 mode/strategy/threshold)+ 处理图(精简编辑器,mode/strategy 忽略)
+        t_path, t_alts, t_thr, mode, strategy, threshold = self._trigger_editor.get_state()
+        h_path, h_alts, h_thr, _hm, _hs, _hg = self._handler_editor.get_state()
         result = MonitorConfig(
             name=self._name_edit.text().strip() or t("common.unnamed_monitor"),
             enabled=self._enabled_cb.isChecked(),
-            image_path=self._image_edit.text().strip(),
-            threshold=self._threshold_slider.value() / 100.0,
+            image_path=t_path.strip(),
+            threshold=threshold,
             check_interval=self._interval_spin.value(),
             handler_action=handler_action,
-            handler_image_path=self._handler_image_edit.text().strip(),
+            handler_image_path=h_path.strip(),
             max_consecutive=self._max_consecutive_spin.value(),
             cooldown=self._cooldown_spin.value(),
+            alt_image_paths=t_alts,
+            alt_thresholds=t_thr,
+            alt_handler_image_paths=h_alts,
+            alt_handler_thresholds=h_thr,
+            match_strategy=strategy,
+            threshold_mode=mode,
         )
         self.accept()
         self._on_done(result)
