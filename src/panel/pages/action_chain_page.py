@@ -352,7 +352,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             step = STEP_CLASSES[action_type]()
         except Exception:
             logger.exception(t("panel.log.create_step_failed", action_type=action_type))
-            messagebox.showerror(t("common.hint"), f"创建步骤失败: {action_type}")
+            messagebox.showerror(t("common.hint"), t("panel.msg.create_step_failed", action_type=action_type))
             return
 
         def on_done(updated_step):
@@ -366,7 +366,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             open_step_dialog(self.app.root, step, title, on_done)
         except Exception:
             logger.exception(t("panel.log.open_step_dialog_failed", action_type=action_type))
-            messagebox.showerror(t("common.hint"), f"打开对话框失败: {action_type}")
+            messagebox.showerror(t("common.hint"), t("panel.msg.open_step_dialog_failed", action_type=action_type))
 
     def _on_edit_step(self):
         idx = self.step_ring.selected_index() if self.step_ring else None

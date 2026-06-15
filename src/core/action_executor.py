@@ -34,6 +34,7 @@ from src.core.screen_guard import DisplaySleepPreventer
 from src.core.fail_safe import FailSafeMonitor, FailSafeTriggered
 from src.core.variables.pool import VariablePool
 from src.core.vision import ScreenCapture, TemplateMatcher
+from src.utils.i18n import t
 from src.utils.timing import human_like_duration
 
 
@@ -177,7 +178,7 @@ class ActionExecutor:
         )
         self._thread.start()
         self._sleep_guard.start()
-        log.info("启动流程图: %s", graph.describe())
+        log.info(t("executor.log.start_flow", graph_desc=graph.describe()))
         self._emit(EventName.EXECUTOR_STARTED)
 
     def stop(self) -> None:
@@ -189,7 +190,7 @@ class ActionExecutor:
         self._last_graph = None
         self._stop_monitors()
         self._sleep_guard.stop()
-        log.info("动作链已停止")
+        log.info(t("executor.log.stopped"))
         self._emit(EventName.EXECUTOR_STOPPED)
 
     def shutdown(self) -> None:
@@ -199,13 +200,13 @@ class ActionExecutor:
 
     def pause(self) -> None:
         self._pause_event.set()
-        log.info("动作链已暂停")
+        log.info(t("executor.log.paused"))
         self._emit(EventName.EXECUTOR_PAUSED)
 
     def resume(self) -> None:
         self._pause_event.clear()
         self._pause_layer.resume()
-        log.info("动作链已恢复")
+        log.info(t("executor.log.resumed"))
         self._emit(EventName.EXECUTOR_RESUMED)
 
     # ── 内部：Facade 核心 ──────────────────────────────────────
@@ -218,7 +219,7 @@ class ActionExecutor:
             while self._alive(gen):
                 with self._lock:
                     self._loop_iteration = iteration
-                log.info("--- 第 %d 轮 ---", iteration + 1)
+                log.info(t("executor.log.round_header", round=iteration + 1))
 
                 if iteration > 0:
                     self._emit(EventName.EXECUTOR_ROUND_STARTED, iteration=iteration)
@@ -236,21 +237,21 @@ class ActionExecutor:
                 if not graph.loop:
                     break
                 if graph.loop_count > 0 and iteration >= graph.loop_count:
-                    log.info("达到循环次数上限 (%d)", graph.loop_count)
+                    log.info(t("executor.log.loop_limit_reached", loop_count=graph.loop_count))
                     break
 
         except FailSafeTriggered:
-            log.warning("FAIL-SAFE 触发: 鼠标在屏幕角落，紧急停止")
+            log.warning(t("executor.log.failsafe_triggered"))
             self._emit(EventName.EXECUTOR_FAILSAFE)
         except Exception:  # noqa: BLE001 — 顶层兜底，防止崩溃
-            log.exception("流程图执行异常")
+            log.exception(t("executor.log.execution_exception"))
         finally:
             self._stop_monitors()
             with self._lock:
                 if self._gen == gen:
                     self._current_step_idx = -1
                     self._running = False
-            log.info("流程图执行结束 (共 %d 轮)", iteration)
+            log.info(t("executor.log.execution_finished", rounds=iteration))
             self._emit(EventName.EXECUTOR_FINISHED)
 
     def record_failure(self) -> None:
@@ -260,7 +261,7 @@ class ActionExecutor:
             count = self._consecutive_failures
         if count >= self._max_consecutive_failures:
             log.warning(
-                "连续 %d 次失败，自动停止", count
+                t("executor.log.consecutive_failures_stop", failures=count)
             )
             self.stop()
 
@@ -311,7 +312,7 @@ class ActionExecutor:
             self._stop_event.set()
             self._thread.join(timeout=5.0)
             if self._thread.is_alive():
-                log.warning("旧执行线程未在5秒内退出（可能存在非中断的长按/等待操作）")
+                log.warning(t("executor.log.old_thread_not_exited"))
         self._thread = None
 
     def _alive(self, gen: int) -> bool:
@@ -369,7 +370,7 @@ class ActionExecutor:
         elif step.key:
             keys = [step.key]
         else:
-            log.warning("长按按键: 未设置按键，跳过")
+            log.warning(t("executor.log.hold_key_no_keys"))
             return
 
         if step.recorded_duration > 0:
@@ -385,9 +386,9 @@ class ActionExecutor:
                 keys[0], duration, stop_check=should_stop
             )
             if interrupted:
-                log.info("  长按按键被中断")
+                log.info(t("executor.log.hold_key_interrupted"))
             else:
-                log.info("  长按 %s %.2fs", keys[0], duration)
+                log.info(t("executor.log.hold_key_single", key_name=keys[0], duration=duration))
             return
 
         def _key_down(k: str) -> None:
@@ -416,7 +417,7 @@ class ActionExecutor:
                 if alive:
                     time.sleep(random.uniform(0.02, 0.06))
 
-        log.info("  长按 %s %.2fs", keys, duration)
+        log.info(t("executor.log.hold_key_multi", keys=keys, duration=duration))
 
     def _do_mouse_move(self, step: MouseMoveStep, gen: int) -> None:
         """MOUSE_MOVE: 鼠标相对移动（支持按住按键拖拽）
@@ -431,7 +432,7 @@ class ActionExecutor:
         dy = step.offset_y
 
         if dx == 0 and dy == 0 and not step.path_points:
-            log.info("  鼠标移动: 偏移为0且无路径点，跳过")
+            log.info(t("executor.log.mouse_move_zero_offset"))
             return
 
         # 有录制路径时，沿真实轨迹精确回放
@@ -455,7 +456,7 @@ class ActionExecutor:
             curve_intensity=step.curve_amount,
         )
 
-        log.info("  鼠标移动: (%d,%d)→(%d,%d) %.2fs", dx, dy, jittered_dx, jittered_dy, jittered_duration)
+        log.info(t("executor.log.mouse_move_done", dx=dx, dy=dy, jittered_dx=jittered_dx, jittered_dy=jittered_dy, duration=jittered_duration))
         time.sleep(random.uniform(0.02, 0.08))
 
     def _replay_recorded_path(self, step: MouseMoveStep, gen: int) -> None:
@@ -482,22 +483,20 @@ class ActionExecutor:
         except Exception:
             final_x, final_y = cur_x, cur_y
             path_ok = False
-            log.exception("  路径回放异常")
+            log.exception(t("executor.log.path_replay_exception"))
         finally:
             if step.button:
                 try:
                     self.input.mouse_up(final_x, final_y, step.button, click_num)
                 except Exception:
-                    log.exception("  mouse_up 失败")
+                    log.exception(t("executor.log.mouse_up_failed"))
 
         if not self._alive(gen):
             return
 
         if path_ok:
             log.info(
-                "  精确路径回放: %d点 (%d,%d)→(%d,%d) %.2fs",
-                len(path_points), cur_x, cur_y, final_x, final_y,
-                step.recorded_duration,
+                t("executor.log.path_replay_exact", point_count=len(path_points), cur_x=cur_x, cur_y=cur_y, final_x=final_x, final_y=final_y, duration=step.recorded_duration),
             )
         time.sleep(random.uniform(0.02, 0.08))
 
@@ -507,7 +506,7 @@ class ActionExecutor:
             return
 
         if not step.combo_keys:
-            log.warning("组合按键: 未设置按键，跳过")
+            log.warning(t("executor.log.key_combo_no_keys"))
             return
 
         keys = _parse_comma_keys(step.combo_keys)
@@ -540,12 +539,12 @@ class ActionExecutor:
                 stop_check=lambda: not self._alive(gen),
             )
 
-        log.info("  组合按键: %s 模式=%s", keys, mode)
+        log.info(t("executor.log.key_combo_done", keys=keys, mode=mode))
 
     def _do_multi_key_sequence(self, step: MultiKeySequenceStep, gen: int) -> None:
         """MULTI_KEY_SEQUENCE: 按顺序执行多个按键"""
         if not step.key_sequence:
-            log.warning("多键序列: 未设置按键序列，跳过")
+            log.warning(t("executor.log.multi_key_no_sequence"))
             return
 
         keys = _parse_comma_keys(step.key_sequence)
@@ -554,7 +553,7 @@ class ActionExecutor:
 
         for i, key in enumerate(keys):
             if not self._alive(gen):
-                log.info("  多键序列被中断")
+                log.info(t("executor.log.multi_key_interrupted"))
                 return
 
             time.sleep(random.uniform(0.01, 0.05))
@@ -564,7 +563,7 @@ class ActionExecutor:
                 interval = random.uniform(step.key_interval_min, step.key_interval_max)
                 time.sleep(interval)
 
-        log.info("  多键序列完成: %d 个按键", len(keys))
+        log.info(t("executor.log.multi_key_done", key_count=len(keys)))
 
     def _do_idle_behavior(self, step: IdleBehaviorStep, gen: int) -> None:
         """IDLE_BEHAVIOR: 随机 idle 微行为"""
@@ -596,22 +595,22 @@ class ActionExecutor:
             if idle_keys and random.random() < step.idle_action_chance:
                 key = random.choice(idle_keys)
                 self.input.press_key(key)
-                log.debug("  idle 随机按键: %s", key)
+                log.debug(t("executor.log.idle_random_key", key_name=key))
 
             count += 1
             if count % 5 == 0:
-                log.debug("  idle 进行中, 剩余 %.1fs", max(0, deadline - time.monotonic()))
+                log.debug(t("executor.log.idle_in_progress", remaining=max(0, deadline - time.monotonic())))
 
-        log.info("  随机idle完成: %.1fs, %d 次微操作", duration, count)
+        log.info(t("executor.log.idle_done", duration=duration, op_count=count))
 
     def _do_start_timer(self, step: StartTimerStep) -> None:
         """START_TIMER: 启动命名计时器"""
         if not step.timer_name:
-            log.warning("启动计时器: 未设置计时器名称，跳过")
+            log.warning(t("executor.log.start_timer_no_name"))
             return
         if self._evaluator:
             self._evaluator.start_timer(step.timer_name)
             timeout_info = f", 超时 {step.timer_timeout}s" if step.timer_timeout > 0 else ""
-            log.info("  启动计时器: %s%s", step.timer_name, timeout_info)
+            log.info(t("executor.log.start_timer_done", timer_name=step.timer_name, timeout_info=timeout_info))
         else:
-            log.warning("  求值器未初始化，无法启动计时器")
+            log.warning(t("executor.log.start_timer_no_evaluator"))
