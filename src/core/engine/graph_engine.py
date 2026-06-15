@@ -26,6 +26,7 @@ from src.core.engine.tool_filter import ToolFilter
 from src.core.error.error_config import ErrorStrategy, RetryPolicy
 from src.core.flow import FlowNode, NodeType
 from src.core.layers.layer import ErrorContext, GraphLayer
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -207,7 +208,7 @@ class GraphEngine:
         # 2. 定位起始节点
         start_node = graph.find_by_type("START")
         if start_node is None:
-            raise ValueError("流程图缺少 START 节点")
+            raise ValueError(t("engine.exc.missing_start_node"))
 
         # 3. 触发 on_graph_start（正序）
         for layer in self._layers:
@@ -221,24 +222,24 @@ class GraphEngine:
         try:
             while current_node is not None:
                 if ctx.is_stopping:
-                    logger.info("收到停止信号，终止执行")
+                    logger.info(t("engine.log.stop_signal_received"))
                     break
 
                 if ctx.is_paused:
                     while ctx.is_paused and not ctx.is_stopping:
                         ctx.stop_event.wait(timeout=0.1)
                     if ctx.is_stopping:
-                        logger.info("暂停期间收到停止信号，终止执行")
+                        logger.info(t("engine.log.stop_signal_during_pause"))
                         break
 
                 iteration += 1
                 if iteration > self._config.max_iterations:
-                    logger.error("超过最大迭代次数 %d，强制终止", self._config.max_iterations)
+                    logger.error(t("engine.log.max_iterations_exceeded", max_count=self._config.max_iterations))
                     break
 
                 # 跳过禁用节点
                 if not current_node.enabled:
-                    logger.info("节点 %s 已禁用，跳过", current_node.node_id)
+                    logger.info(t("engine.log.node_disabled_skipped", node_id=current_node.node_id))
                     current_node = self._resolve_next_node(graph, current_node, None)
                     continue
 
@@ -256,7 +257,7 @@ class GraphEngine:
 
                 ctx = ctx.with_node(current_node, increment_step=is_action)
                 node_label = f"步骤 {action_step_idx}" if is_action else current_node.node_type.name
-                logger.info("▶ 执行节点 %s [%s] (迭代 #%d)", current_node.node_id, node_label, iteration)
+                logger.info(t("engine.log.execute_node", node_id=current_node.node_id, label=node_label, iteration=iteration))
 
                 # 执行节点管道
                 result = self._execute_pipeline(ctx)
@@ -276,7 +277,7 @@ class GraphEngine:
 
                 # ExecutionBlocker 哨兵 → 跳过
                 if isinstance(result, ExecutionBlocker):
-                    logger.info("节点 %s 被阻断并跳过: %s", current_node.node_id, result.reason)
+                    logger.info(t("engine.log.node_blocked_skipped", node_id=current_node.node_id, reason=result.reason))
                     if incremental:
                         tracker.mark_clean(current_node.node_id, generation)
                     current_node = self._resolve_next_node(graph, current_node, None)
@@ -469,7 +470,7 @@ class GraphEngine:
             return result
 
         # 不应到达此处，但安全兜底
-        return NodeResult.fail(last_error or RuntimeError("未知执行错误"))
+        return NodeResult.fail(last_error or RuntimeError(t("engine.exc.unknown_execution_error")))
 
     # ---- 节点解析 ----
 
@@ -499,7 +500,7 @@ class GraphEngine:
         def _follow(edge_to_node: str) -> FlowNode | None:
             node = graph.get_node(edge_to_node)
             if node is None:
-                logger.error("悬挂边: %s → %s 节点不存在", current.node_id, edge_to_node)
+                logger.error(t("engine.log.dangling_edge", from_node=current.node_id, to_node=edge_to_node))
             return node
 
         # 规则 1：显式指定标签
@@ -703,7 +704,7 @@ class GraphEngine:
                 errors.append(issue.message)
             else:
                 # 保留 WARNING 级别的日志行为
-                logger.warning("图验证警告: %s", issue.message)
+                logger.warning(t("engine.log.validation_warning", message=issue.message))
         return errors
 
     @staticmethod

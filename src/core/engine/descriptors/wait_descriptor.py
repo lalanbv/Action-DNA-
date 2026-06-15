@@ -17,6 +17,7 @@ from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
 from src.core.engine.pause_aware_wait import pause_aware_wait
 from src.core.step_types import WaitRandomStep, WaitStep
+from src.utils.i18n import t
 from src.utils.timing import human_like_duration
 
 if TYPE_CHECKING:
@@ -70,7 +71,7 @@ class WaitDescriptor(NodeDescriptor):
         if action.recorded_duration > 0:
             seconds = human_like_duration(action.recorded_duration)
 
-        logger.info("等待 %.2fs", seconds)
+        logger.info(t("engine.log.wait_fixed", seconds=seconds))
         if _interruptible_wait(ctx, seconds):
             return NodeResult.fail("收到停止信号，等待中断")
 
@@ -128,7 +129,7 @@ class WaitRandomDescriptor(NodeDescriptor):
 
         wait_min = max(0.0, wait_min)
         seconds = random.uniform(wait_min, wait_max)
-        logger.info("随机等待 %.2fs (范围 %.2f~%.2fs)", seconds, wait_min, wait_max)
+        logger.info(t("engine.log.wait_random", seconds=seconds, wait_min=wait_min, wait_max=wait_max))
         if _interruptible_wait(ctx, seconds):
             return NodeResult.fail("收到停止信号，随机等待中断")
 

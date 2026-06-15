@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.core.step_types import BaseStep
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_blocker import ExecutionBlocker
@@ -115,7 +116,7 @@ class NodeDescriptor(ABC):
 
             build_generic_dialog(parent, cls, action, callback)
         except ImportError:
-            logger.debug("generic_node_dialog 不可用，跳过对话框构建")
+            logger.debug(t("engine.log.generic_dialog_unavailable"))
 
     # ---- 执行 ----
 

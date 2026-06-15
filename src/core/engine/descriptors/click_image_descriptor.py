@@ -21,6 +21,7 @@ from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
 from src.core.vision.capture import MultiMatchResult
 from src.core.vision.match_config import resolve_find_any_params
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -186,7 +187,7 @@ class ClickImageDescriptor(NodeDescriptor):
             rect = result.rect if result is not None else None
             return _MatchAttempt(rect=rect, had_error=False)
         except Exception as exc:
-            logger.warning("多模板匹配异常: %s — %s", action.image_path, exc)
+            logger.warning(t("engine.log.multi_match_exception", image_path=action.image_path, error=exc))
             return _MatchAttempt(rect=None, had_error=True, error_msg=str(exc))
 
     def _find_with_retries(
@@ -249,7 +250,7 @@ class ClickImageDescriptor(NodeDescriptor):
             if last_error:
                 parts.append(f"最后错误: {last_error[:80]}")
         summary = ", ".join(parts)
-        logger.info("[CLICK_IMAGE] \"%s\" — %d次尝试: %s ✗", basename, attempts, summary)
+        logger.info(t("engine.log.click_image_failed", basename=basename, attempts=attempts, summary=summary))
         return None
 
     def _wait_until_found(
@@ -290,7 +291,7 @@ class ClickImageDescriptor(NodeDescriptor):
             result = self._try_single_match(ctx, action)
             if result.had_error:
                 error_count += 1
-                logger.warning("WAIT 模板匹配异常: %s", action.image_path)
+                logger.warning(t("engine.log.wait_match_exception", image_path=action.image_path))
                 wait = random.uniform(action.retry_wait_min, action.retry_wait_max)
                 ctx.stop_event.wait(timeout=wait)
                 continue
@@ -330,7 +331,7 @@ class ClickImageDescriptor(NodeDescriptor):
             case DetectMode.SKIP_IF_NOT_FOUND:
                 return ExecutionBlocker(reason=f"未找到模板: {template_path}")
             case _:
-                logger.warning("未知 DetectMode: %s, 默认跳过", detect_mode)
+                logger.warning(t("engine.log.unknown_detect_mode", detect_mode=detect_mode))
                 return ExecutionBlocker(reason=f"未找到模板: {template_path}")
 
     def _execute_found_action(
@@ -434,6 +435,6 @@ class ClickImageDescriptor(NodeDescriptor):
             case FoundAction.OUTPUT_COORD:
                 pass  # 仅输出坐标，不执行操作
             case _:
-                logger.warning("未处理的 FoundAction: %s, 默认左键点击", params.found_action)
+                logger.warning(t("engine.log.unhandled_found_action", found_action=params.found_action))
                 ctx.input_ctrl.click(x, y, button="left", clamp=clamp)
 

@@ -13,6 +13,7 @@ from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
 from src.core.step_types import PressKeyStep
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -70,9 +71,9 @@ class PressKeyDescriptor(NodeDescriptor):
         if key.startswith("mouse_"):
             button = key.removeprefix("mouse_")
             ctx.input_ctrl.click_current_pos(button)
-            logger.info("鼠标点击当前位置: button=%s", button)
+            logger.info(t("engine.log.mouse_click_current", button=button))
         else:
             ctx.input_ctrl.press_key(key)
-            logger.info("按键: %s", key)
+            logger.info(t("engine.log.press_key", key_name=key))
 
         return NodeResult.ok()

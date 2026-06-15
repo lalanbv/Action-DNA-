@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -101,19 +102,19 @@ class SubGraphDescriptor(NodeDescriptor):
             extra=_with_ancestor(ctx.extra, ancestor_chain, graph_ref),
         )
 
-        logger.info("▶ 进入子图 '%s' (ancestor: %s)", graph_ref, ancestor_chain)
+        logger.info(t("engine.log.subgraph_enter", graph_ref=graph_ref, ancestor=ancestor_chain))
 
         try:
             engine.run(sub_graph, child_ctx)
         except Exception as exc:  # noqa: BLE001 — 描述符不能向上传播异常
-            logger.error("子图 '%s' 执行失败: %s", graph_ref, exc)
+            logger.error(t("engine.log.subgraph_failed", graph_ref=graph_ref, error=exc))
             return NodeResult(
                 success=False,
                 error=f"子图 '{graph_ref}' 执行失败: {exc}",
                 output_vars={"sub_result": "error"},
             )
 
-        logger.info("◀ 子图 '%s' 执行完成", graph_ref)
+        logger.info(t("engine.log.subgraph_done", graph_ref=graph_ref))
         return NodeResult(success=True, output_vars={"sub_result": "ok"})
 
 

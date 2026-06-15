@@ -11,6 +11,7 @@ import logging
 from src.core.step_types import BaseStep
 from src.recorder.event_merger import EventMerger
 from src.recorder.recorder import MacroRecorder, RecordedEvent
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class RecordBridge:
         """停止录制并返回合并后的步骤列表。"""
         events = self._recorder.stop()
         steps = self._merger.merge(events)
-        logger.info("录制→转换: %d 事件 → %d 步骤", len(events), len(steps))
+        logger.info(t("engine.log.record_converted", events=len(events), steps=len(steps)))
         return steps
 
     def convert_events(self, events: list[RecordedEvent]) -> list[BaseStep]:

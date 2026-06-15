@@ -11,6 +11,7 @@ import threading
 from typing import Type
 
 from src.core.engine.node_descriptor import NodeDescriptor
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class NodeRegistry:
         """
         with cls._lock:
             cls._frozen = True
-        logger.debug("NodeRegistry 已冻结，%d 个节点类型", len(cls._registry))
+        logger.debug(t("engine.log.registry_frozen", type_count=len(cls._registry)))
 
     @classmethod
     def unfreeze(cls) -> None:
@@ -79,7 +80,7 @@ class NodeRegistry:
             cat = descriptor_class.category()
             if atype not in cls._categories.setdefault(cat, []):
                 cls._categories[cat].append(atype)
-        logger.debug("注册节点: %s -> %s [%s]", atype, descriptor_class.__name__, cat)
+        logger.debug(t("engine.log.register_node", action_type=atype, class_name=descriptor_class.__name__, category=cat))
 
     @classmethod
     def get(cls, action_type: str) -> Type[NodeDescriptor]:
@@ -152,7 +153,7 @@ class NodeRegistry:
                 ]
                 if not cls._categories[cat]:
                     del cls._categories[cat]
-        logger.info("注销节点: %s", action_type)
+        logger.info(t("engine.log.unregister_node", action_type=action_type))
 
     @classmethod
     def clear(cls) -> None:

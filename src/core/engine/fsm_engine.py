@@ -18,6 +18,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -233,7 +235,7 @@ class FSMEngine:
             old = self._current_state
             self._current_state = target
             self._transition_count += 1
-            logger.debug("FSM 转换: %s → %s (event=%s)", old, target, event)
+            logger.debug(t("engine.log.fsm_transition", old=old, target=target, event=event))
         return target
 
     def evaluate(self, event: str) -> str | None:
@@ -251,7 +253,7 @@ class FSMEngine:
 
         while depth < MAX_TRANSITION_DEPTH:
             if time.monotonic() - start_time > MAX_EVALUATION_TIME:
-                logger.warning("FSM 评估超时 (%.3fs)，终止转换", time.monotonic() - start_time)
+                logger.warning(t("engine.log.fsm_eval_timeout", elapsed=time.monotonic() - start_time))
                 return None
 
             transition = self._find_transition_for_state(event, probe_state)
@@ -260,13 +262,13 @@ class FSMEngine:
 
             target = self._resolve_target(transition)
             if target == START_STATE:
-                logger.warning("FSM 不允许回退到 START 状态")
+                logger.warning(t("engine.log.fsm_no_revert_to_start"))
                 return probe_state if depth > 0 else None
 
             depth += 1
             probe_state = target
 
-        logger.warning("FSM 达到最大转换深度 (%d)", MAX_TRANSITION_DEPTH)
+        logger.warning(t("engine.log.fsm_max_depth", depth=MAX_TRANSITION_DEPTH))
         return probe_state
 
     # ---- 延迟事件 ----
@@ -277,10 +279,10 @@ class FSMEngine:
         """调度延迟事件。超出上限时移除最旧的未触发事件。"""
         if len(self._delayed_events) >= self._MAX_DELAYED_EVENTS:
             self._delayed_events.popleft()
-            logger.warning("延迟事件队列已满，移除最旧事件")
+            logger.warning(t("engine.log.fsm_delayed_queue_full"))
         delayed = DelayedEvent(event=event, delay_seconds=delay_seconds)
         self._delayed_events.append(delayed)
-        logger.debug("调度延迟事件: %s (%.1fs)", event, delay_seconds)
+        logger.debug(t("engine.log.fsm_schedule_delayed", event=event, delay=delay_seconds))
         return delayed
 
     def process_delayed(self) -> list[str]:
@@ -350,12 +352,12 @@ class FSMEngine:
         if condition is None:
             return True
         if self._condition_evaluator is None:
-            logger.warning("FSM 条件求值器未设置，跳过条件: %s", condition)
+            logger.warning(t("engine.log.fsm_no_evaluator", condition=condition))
             return True
         try:
             return self._condition_evaluator(condition)
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.error("FSM 条件求值失败: %s", condition, exc_info=True)
+            logger.error(t("engine.log.fsm_eval_failed", condition=condition), exc_info=True)
             return False
 
     # ---- 序列化 ----

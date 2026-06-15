@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -99,16 +100,16 @@ class OCRDescriptor(NodeDescriptor):
                 box = result.bounding_box
                 x, y, w, h = box
             except (TypeError, ValueError):
-                logger.warning("OCR bounding_box 格式异常: %r", result.bounding_box)
+                logger.warning(t("engine.log.ocr_bbox_invalid", bounding_box=result.bounding_box))
                 return NodeResult.ok(found=True, text=result.text)
-            logger.info("OCR 找到文本 '%s' (置信度: %.2f)", result.text, result.confidence)
+            logger.info(t("engine.log.ocr_found_text", text=result.text, confidence=result.confidence))
             return NodeResult.ok(
                 found=True,
                 text=result.text,
                 position=(x + w // 2, y + h // 2),
             )
 
-        logger.info("OCR 未找到目标文本: '%s'", target)
+        logger.info(t("engine.log.ocr_target_not_found", target=target))
         return NodeResult.ok(found=False, text="")
 
     def _recognize_all(
@@ -120,7 +121,7 @@ class OCRDescriptor(NodeDescriptor):
         multi = ocr_recognizer.recognize(screenshot, region)
         texts = multi.texts
 
-        logger.info("OCR 识别到 %d 行文本", len(texts))
+        logger.info(t("engine.log.ocr_lines_recognized", line_count=len(texts)))
         return NodeResult.ok(
             found=len(texts) > 0,
             all_texts=texts,

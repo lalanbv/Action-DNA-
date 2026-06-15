@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -61,7 +62,7 @@ class ConditionDescriptor(NodeDescriptor):
         condition = node.condition
 
         if condition is None:
-            logger.info("条件节点 %s: 无条件配置，默认走 true", node.node_id)
+            logger.info(t("engine.log.condition_no_config", node_id=node.node_id))
             return NodeResult(
                 success=True,
                 next_label="true",
@@ -71,7 +72,7 @@ class ConditionDescriptor(NodeDescriptor):
         evaluator = ctx.evaluator
         if evaluator is None:
             logger.warning(
-                "条件节点 %s: 求值器未初始化，默认走 true", node.node_id,
+                t("engine.log.condition_no_evaluator", node_id=node.node_id),
             )
             return NodeResult(
                 success=True,
@@ -82,7 +83,7 @@ class ConditionDescriptor(NodeDescriptor):
         try:
             result = evaluator.evaluate(condition)
         except Exception as exc:
-            logger.warning("条件节点 %s: 评估异常，默认走 true: %s", node.node_id, exc)
+            logger.warning(t("engine.log.condition_eval_exception", node_id=node.node_id, error=exc))
             return NodeResult(
                 success=True,
                 next_label="true",

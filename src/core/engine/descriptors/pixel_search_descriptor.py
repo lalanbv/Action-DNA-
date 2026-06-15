@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -108,10 +109,9 @@ class PixelSearchDescriptor(NodeDescriptor):
 
         if result.found:
             logger.info(
-                "像素搜索找到 %d 个匹配点，首个位置: %s",
-                result.count, result.first,
+                t("engine.log.pixel_search_found", match_count=result.count, first=result.first),
             )
         else:
-            logger.info("像素搜索未找到匹配像素")
+            logger.info(t("engine.log.pixel_search_not_found"))
 
         return NodeResult.ok(**output)
