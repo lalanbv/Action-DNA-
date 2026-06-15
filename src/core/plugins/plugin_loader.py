@@ -309,7 +309,9 @@ class PluginLoader:
         # 开发模式 / 第三方插件：从文件路径加载
         plugin_dir = self._find_plugin_dir(plugin_id)
         if plugin_dir is None:
-            raise RuntimeError(f"找不到插件目录: '{plugin_id}'")
+            raise RuntimeError(
+                t("plugins.exc.plugin_dir_not_found", plugin_id=plugin_id)
+            )
 
         init_file = plugin_dir / "__init__.py"
         if not init_file.exists():
@@ -347,7 +349,7 @@ class PluginLoader:
         """
         entry = self._plugins.get(plugin_id)
         if entry is None:
-            raise ValueError(f"未发现插件: '{plugin_id}'")
+            raise ValueError(t("plugins.exc.plugin_not_found", plugin_id=plugin_id))
 
         if entry.state not in (
             PluginState.DISCOVERED,
@@ -463,7 +465,7 @@ class PluginLoader:
         """卸载单个插件。"""
         entry = self._plugins.get(plugin_id)
         if entry is None:
-            raise ValueError(f"未发现插件: '{plugin_id}'")
+            raise ValueError(t("plugins.exc.plugin_not_found", plugin_id=plugin_id))
 
         if entry.state not in (PluginState.LOADED, PluginState.ACTIVE):
             raise RuntimeError(
@@ -782,10 +784,14 @@ class PluginLoader:
         """
         plugin_dir = self._find_plugin_dir(plugin_id)
         if plugin_dir is None:
-            raise ValueError(f"找不到插件目录: '{plugin_id}'")
+            raise ValueError(
+                t("plugins.exc.plugin_dir_not_found", plugin_id=plugin_id)
+            )
         manifest_path = plugin_dir / "plugin.json"
         if not manifest_path.exists():
-            raise ValueError(f"插件清单不存在: '{manifest_path}'")
+            raise ValueError(
+                t("plugins.exc.manifest_not_found", manifest_path=manifest_path)
+            )
 
         with open(manifest_path, "r", encoding="utf-8") as f:
             data = json.load(f)

@@ -26,6 +26,7 @@ from src.core.engine.node_result import NodeResult
 from src.core.plugins.plugin_context import PluginContext
 from src.core.plugins.plugin_interface import PluginInterface, PluginMetadata
 from src.core.plugins.plugin_node_registry import PluginNodeRegistry
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -348,10 +349,10 @@ class TaskPlugin(PluginInterface):
         )
 
     def on_load(self, context: PluginContext) -> None:
-        logger.info("TaskPlugin 加载中...")
+        logger.info(t("plugins.builtin.log.task_loading"))
 
     def on_unload(self) -> None:
-        logger.info("TaskPlugin 卸载中...")
+        logger.info(t("plugins.builtin.log.task_unloading"))
 
     def register_nodes(self, registry: PluginNodeRegistry) -> None:
         """注册任务节点描述符。"""

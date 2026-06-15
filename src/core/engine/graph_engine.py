@@ -112,7 +112,7 @@ class GraphEngine:
         执行期间（_locked=True）加入的层会延迟到 run() 结束后安装。
         """
         if layer.name in self._layer_map:
-            raise ValueError(f"层 '{layer.name}' 已存在")
+            raise ValueError(t("engine.exc.layer_exists", layer_name=layer.name))
         if not self._lock_event.is_set():
             self._pending_layers.append(("add", layer))
             return
@@ -420,7 +420,12 @@ class GraphEngine:
                 try:
                     descriptor_cls = NodeRegistry.get(action_type)
                 except KeyError:
-                    raise RuntimeError(f"未注册的节点类型: {action_type}") from None
+                    raise RuntimeError(
+                        t(
+                            "engine.exc.unregistered_node_type",
+                            action_type=action_type,
+                        )
+                    ) from None
                 descriptor = self._get_descriptor(descriptor_cls)
 
                 if attempt == 0:

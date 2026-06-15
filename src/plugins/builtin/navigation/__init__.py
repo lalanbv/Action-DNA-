@@ -26,6 +26,7 @@ from src.core.engine.node_result import NodeResult
 from src.core.plugins.plugin_context import PluginContext
 from src.core.plugins.plugin_interface import PluginInterface, PluginMetadata
 from src.core.plugins.plugin_node_registry import PluginNodeRegistry
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -376,10 +377,10 @@ class NavigationPlugin(PluginInterface):
         )
 
     def on_load(self, context: PluginContext) -> None:
-        logger.info("NavigationPlugin 加载中...")
+        logger.info(t("plugins.builtin.log.navigation_loading"))
 
     def on_unload(self) -> None:
-        logger.info("NavigationPlugin 卸载中...")
+        logger.info(t("plugins.builtin.log.navigation_unloading"))
 
     def register_nodes(self, registry: PluginNodeRegistry) -> None:
         """注册导航节点描述符。"""

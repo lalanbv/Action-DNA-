@@ -10,6 +10,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 REQUIRED_FIELDS = {"id", "version", "permissions"}
@@ -28,7 +30,9 @@ class EngineVersion:
         """解析 "X.Y.Z" 格式的版本号。"""
         match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version_str.strip())
         if not match:
-            raise ValueError(f"无效版本号格式: {version_str!r}，预期 'X.Y.Z'")
+            raise ValueError(
+                t("plugins.exc.invalid_version_format", version_str=version_str)
+            )
         return cls(int(match[1]), int(match[2]), int(match[3]))
 
     def __lt__(self, other: EngineVersion) -> bool:

@@ -128,7 +128,9 @@ def _load_sub_graph(graph_ref: str, ctx: ExecutionContext) -> FlowGraph:
     config_path = os.path.join(profile_dir, "profile.json")
 
     if not os.path.exists(config_path):
-        raise FileNotFoundError(f"子图配置不存在: {config_path}")
+        raise FileNotFoundError(
+            t("engine.exc.subgraph_config_not_found", config_path=config_path)
+        )
 
     with open(config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
