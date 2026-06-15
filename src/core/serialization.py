@@ -94,11 +94,11 @@ def dict_to_typed_step(data: dict) -> BaseStep:
     自动忽略未知字段（向前/向后兼容）。
     """
     if "action_type" not in data:
-        raise ValueError("缺少必需字段 'action_type'")
+        raise ValueError(t("serialization.exc.missing_action_type"))
     atype = ActionType[data["action_type"]]
     cls = STEP_CLASSES.get(atype)
     if cls is None:
-        raise ValueError(f"未注册的 ActionType: {atype.name}")
+        raise ValueError(t("serialization.exc.unregistered_action_type", name=atype.name))
     d = dict(data)
     d.pop("action_type", None)
     # 枚举字段还原

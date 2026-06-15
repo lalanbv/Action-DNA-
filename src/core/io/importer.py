@@ -271,7 +271,7 @@ class MacroImporter:
         data = json.loads(json_str)
         version = data.get("version", "")
         if version != self.SUPPORTED_VERSION:
-            raise ValueError(f"不支持的宏脚本版本: {version} (需要 {self.SUPPORTED_VERSION})")
+            raise ValueError(t("io.exc.unsupported_version", version=version, required=self.SUPPORTED_VERSION))
 
         steps: list[BaseStep] = []
         for item in data.get("steps", []):

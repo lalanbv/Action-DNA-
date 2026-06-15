@@ -14,6 +14,7 @@ from pathlib import Path
 from src.core.action import ActionType
 from src.core.step_types import BaseStep
 from src.core.flow import FlowGraph, FlowNode, NodeType
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class ScriptExporter:
         node_count = len([n for n in nodes if n.action and n.enabled and n.action.enabled])
         template_count = len(templates)
 
-        logger.info("脚本已导出: %s (%d 节点, %d 模板)", output_path, node_count, template_count)
+        logger.info(t("io.log.script_exported", path=str(output_path), node_count=node_count, template_count=template_count))
 
         return ExportResult(
             output_path=output_path,
@@ -203,7 +204,7 @@ class ScriptExporter:
         """沿连接线性遍历图节点，收集有序节点列表。"""
         start_id = graph.start_node_id
         if not start_id or start_id not in graph.nodes:
-            raise ValueError("图中没有有效的 START 节点")
+            raise ValueError(t("io.exc.no_valid_start_node"))
 
         result: list[FlowNode] = []
         visited: set[str] = set()

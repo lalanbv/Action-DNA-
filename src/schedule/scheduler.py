@@ -346,13 +346,13 @@ class Scheduler:
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
         with open(target, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info("调度状态已保存到 %s", target)
+        logger.info(t("scheduler.log.state_saved", path=target))
 
     def load(self, path: str = "") -> int:
         """从 JSON 文件加载调度状态。返回加载的调度数量。"""
         target = path or self._persist_path
         if not os.path.exists(target):
-            logger.debug("调度文件不存在: %s", target)
+            logger.debug(t("scheduler.log.file_not_found", path=target))
             return 0
         with open(target, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -364,7 +364,7 @@ class Scheduler:
                     self._schedules[sid] = ScheduleConfig.from_dict(config_dict)
                     self._run_counts[sid] = run_counts.get(sid, 0)
                 except Exception as exc:
-                    logger.warning("跳过无效调度 %s: %s", sid, exc)
+                    logger.warning(t("scheduler.log.skip_invalid_schedule", sid=sid, error=str(exc)))
         count = len(schedules)
-        logger.info("从 %s 加载了 %d 个调度", target, count)
+        logger.info(t("scheduler.log.loaded_from", path=target, schedule_count=count))
         return count

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.core.error.error_codes import StandardErrorCode, StandardizedError
+from src.utils.i18n import t
 
 __all__ = ["ErrorRegistry", "ErrorCategory"]
 
@@ -209,7 +210,7 @@ class ErrorRegistry:
         cls._ensure_initialized()
         tpl = cls._templates.get(error_id)
         if tpl is None:
-            raise KeyError(f"未知错误码: {error_id}")
+            raise KeyError(t("error.exc.unknown_error_code", error_id=error_id))
 
         message = tpl.message_template.format(**context) if context else tpl.message_template
         recovery = tpl.recovery_template
@@ -228,4 +229,4 @@ class ErrorRegistry:
         for eid, tpl in cls._templates.items():
             if tpl.standard_code == standard_code:
                 return eid
-        raise KeyError(f"未注册的标准错误码: {standard_code}")
+        raise KeyError(t("error.exc.unregistered_standard_code", standard_code=str(standard_code)))

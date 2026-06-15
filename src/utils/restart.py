@@ -11,6 +11,8 @@ import os
 import subprocess
 import sys
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,7 +25,7 @@ def restart_app() -> None:
     - 调用方已负责释放独占资源，剩余资源由 OS 回收
     """
     cmd = _build_cmd()
-    logger.info("重启应用: %s", " ".join(cmd))
+    logger.info(t("restart.log.restarting", cmd=" ".join(cmd)))
 
     subprocess.Popen(cmd, **_popen_kwargs())
     os._exit(0)

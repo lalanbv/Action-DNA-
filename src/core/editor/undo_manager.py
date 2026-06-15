@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from src.core.editor.commands.edit_command import EditCommand
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class UndoManager:
         merged = False
         if self._undo_stack and self._can_merge(self._undo_stack[-1], command, now) and self._undo_stack[-1].merge(command):
             merged = True
-            logger.debug("命令已合并: %s", command.description)
+            logger.debug(t("editor.log.command_merged", desc=command.description))
 
         if not merged:
             command.execute()
@@ -57,7 +58,7 @@ class UndoManager:
         command = self._undo_stack.pop()
         command.undo()
         self._redo_stack.append(command)
-        logger.debug("撤销: %s", command.description)
+        logger.debug(t("editor.log.undo", desc=command.description))
         self._notify_change()
         return command
 
@@ -67,7 +68,7 @@ class UndoManager:
         command = self._redo_stack.pop()
         command.execute()
         self._undo_stack.append(command)
-        logger.debug("重做: %s", command.description)
+        logger.debug(t("editor.log.redo", desc=command.description))
         self._notify_change()
         return command
 
@@ -120,4 +121,4 @@ class UndoManager:
             try:
                 callback()
             except Exception:
-                logger.exception("撤销管理器回调异常")
+                logger.exception(t("editor.log.callback_exception"))

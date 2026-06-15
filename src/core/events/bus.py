@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
 from src.core.events.events import BaseEvent
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,7 @@ class TypedEventBus:
             try:
                 handler(event)
             except Exception:  # pylint: disable=broad-exception-caught
-                logger.error("UI 事件处理器出错", exc_info=True)
+                logger.error(t("events.log.ui_handler_error"), exc_info=True)
 
         return len(pending)
 

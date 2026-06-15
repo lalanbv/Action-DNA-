@@ -10,6 +10,8 @@ import ast
 import logging
 from typing import Any
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 _ALLOWED_AST_NODES = (
@@ -41,19 +43,19 @@ def safe_eval(
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as e:
-        logger.warning("表达式语法错误: %s, 错误: %s", expression, e)
+        logger.warning(t("safe_eval.log.syntax_error", expression=expression, error=str(e)))
         return False
 
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_AST_NODES):
-            logger.warning("表达式包含不允许的节点: %s", expression)
+            logger.warning(t("safe_eval.log.disallowed_node", expression=expression))
             return False
 
     try:
         code = compile(tree, "<safe_eval>", "eval")
         return bool(eval(code, {"__builtins__": {}}, local_vars))  # noqa: S307
     except Exception as e:
-        logger.warning("表达式评估失败: %s → %s", expression, e)
+        logger.warning(t("safe_eval.log.eval_failed", expression=expression, error=str(e)))
         return False
 
 

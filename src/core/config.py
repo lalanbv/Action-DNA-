@@ -69,9 +69,9 @@ class ConfigurationManager:
             data = json.loads(text)
             self._layers[ConfigLayer.CONFIG_FILE] = _flatten_dict(data)
         except FileNotFoundError:
-            logger.debug("配置文件不存在: %s", self._config_path)
+            logger.debug(t("config.log.file_not_found", path=str(self._config_path)))
         except (json.JSONDecodeError, OSError) as e:
-            logger.warning("配置文件加载失败: %s: %s", self._config_path, e)
+            logger.warning(t("config.log.load_failed", path=str(self._config_path), error=str(e)))
 
     def load_env_overrides(self) -> None:
         """从 DNA_* 环境变量加载覆盖到 ENV_VAR 层。"""
@@ -375,7 +375,7 @@ def load_config(path: str | None = None) -> AppConfig:
         except FileNotFoundError:
             _config_cache = AppConfig()
         except (json.JSONDecodeError, TypeError) as e:
-            logger.warning("配置文件解析失败，使用默认配置: %s: %s", path, e)
+            logger.warning(t("config.log.parse_failed_use_default", path=str(path), error=str(e)))
             _config_cache = AppConfig()
         _config_cache_path = path
         return _config_cache
@@ -398,7 +398,7 @@ def save_config(cfg: AppConfig, path: str | None = None) -> None:
             os.unlink(tmp_path)
             raise
     except OSError as e:
-        logger.warning("保存配置失败: %s: %s", path, e)
+        logger.warning(t("config.log.save_failed", path=str(path), error=str(e)))
         return
     with _config_lock:
         _config_cache = cfg
