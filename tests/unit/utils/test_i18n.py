@@ -1,8 +1,8 @@
-"""i18n 单元测试 — 覆盖核心 API + AST key 完整性校验。"""
+"""i18n 单元测试 — 覆盖核心 API。
 
-import ast
-import json
-from pathlib import Path
+key 完整性校验(missing/mismatch/redundant/dynamic)已由 ``src/utils/i18n_lint.py``
+统一提供,pytest gate 见 ``test_i18n_keys.py``。本文件只覆盖核心运行时 API。
+"""
 
 import pytest
 
@@ -93,81 +93,6 @@ class TestDeferredValidation:
         i18n._pending_validations = [("nonexistent.flush.test", "test_ctx")]
         init("zh")
         assert i18n._pending_validations == []
-
-
-def _collect_t_keys_from_source() -> set[str]:
-    keys: set[str] = set()
-    src_dir = Path("src")
-    for py_file in src_dir.rglob("*.py"):
-        try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "t"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                keys.add(node.args[0].value)
-    return keys
-
-
-def _load_translations(lang: str) -> set[str]:
-    path = Path("src/utils/translations") / f"{lang}.json"
-    with open(path, encoding="utf-8") as f:
-        return set(json.load(f).keys())
-
-
-_SRC_KEYS: set[str] | None = None
-_ZH_KEYS: set[str] | None = None
-_EN_KEYS: set[str] | None = None
-
-
-@pytest.fixture(scope="module")
-def src_keys() -> set[str]:
-    global _SRC_KEYS
-    if _SRC_KEYS is None:
-        _SRC_KEYS = _collect_t_keys_from_source()
-    return _SRC_KEYS
-
-
-@pytest.fixture(scope="module")
-def zh_keys() -> set[str]:
-    global _ZH_KEYS
-    if _ZH_KEYS is None:
-        _ZH_KEYS = _load_translations("zh")
-    return _ZH_KEYS
-
-
-@pytest.fixture(scope="module")
-def en_keys() -> set[str]:
-    global _EN_KEYS
-    if _EN_KEYS is None:
-        _EN_KEYS = _load_translations("en")
-    return _EN_KEYS
-
-
-class TestTranslationCompleteness:
-    def test_all_t_keys_in_zh(self, src_keys: set[str], zh_keys: set[str]) -> None:
-        missing = sorted(src_keys - zh_keys)
-        assert not missing, f"Missing from zh.json: {missing}"
-
-    def test_all_t_keys_in_en(self, src_keys: set[str], en_keys: set[str]) -> None:
-        missing = sorted(src_keys - en_keys)
-        assert not missing, f"Missing from en.json: {missing}"
-
-    def test_zh_and_en_have_same_keys(self, zh_keys: set[str], en_keys: set[str]) -> None:
-        # 复数测试夹具（_test.*）允许跨语言非对称：en 用 .one/.other，zh 用 base。
-        def _strip_fixture(keys: set[str]) -> set[str]:
-            return {k for k in keys if not k.startswith("_test.")}
-        zh_only = sorted(_strip_fixture(zh_keys) - _strip_fixture(en_keys))
-        en_only = sorted(_strip_fixture(en_keys) - _strip_fixture(zh_keys))
-        assert not zh_only, f"Only in zh.json: {zh_only}"
-        assert not en_only, f"Only in en.json: {en_only}"
 
 
 class TestFormatError:
