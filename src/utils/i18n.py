@@ -74,10 +74,14 @@ def get_language() -> str:
     return _current_lang
 
 
-def t(key: str, **kwargs: object) -> str:
-    """获取翻译文本，支持 format 参数。
+def t(key: str, count: int | None = None, **kwargs: object) -> str:
+    """获取翻译文本，支持 format 参数与复数。
 
-    查找顺序: 当前语言 → zh 回退 → 返回 key 本身。
+    查找顺序:
+    - count 非 None 时: ``{key}.one``/``{key}.other``(count==1 选 one)→ ``{key}`` → 回退同序 → key 本身
+    - count 为 None 时: 当前语言 → zh 回退 → key 本身(与历史行为一致)
+
+    count 非 None 时自动注入 kwargs(供 ``{count}`` 占位)。
     """
     if not _initialized:
         init("zh")
@@ -86,9 +90,20 @@ def t(key: str, **kwargs: object) -> str:
         translations = _translations
         fallback = _fallback_translations
 
-    text = translations.get(key)
-    if text is None:
-        text = fallback.get(key, key)
+    if count is not None:
+        kwargs.setdefault("count", count)
+        suffix = ".one" if count == 1 else ".other"
+        text = translations.get(key + suffix)
+        if text is None:
+            text = translations.get(key)
+        if text is None:
+            text = fallback.get(key + suffix)
+        if text is None:
+            text = fallback.get(key, key)
+    else:
+        text = translations.get(key)
+        if text is None:
+            text = fallback.get(key, key)
     try:
         text = text.format(**kwargs)
     except (KeyError, IndexError, ValueError) as exc:

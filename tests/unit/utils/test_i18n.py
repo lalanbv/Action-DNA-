@@ -161,8 +161,11 @@ class TestTranslationCompleteness:
         assert not missing, f"Missing from en.json: {missing}"
 
     def test_zh_and_en_have_same_keys(self, zh_keys: set[str], en_keys: set[str]) -> None:
-        zh_only = sorted(zh_keys - en_keys)
-        en_only = sorted(en_keys - zh_keys)
+        # 复数测试夹具（_test.*）允许跨语言非对称：en 用 .one/.other，zh 用 base。
+        def _strip_fixture(keys: set[str]) -> set[str]:
+            return {k for k in keys if not k.startswith("_test.")}
+        zh_only = sorted(_strip_fixture(zh_keys) - _strip_fixture(en_keys))
+        en_only = sorted(_strip_fixture(en_keys) - _strip_fixture(zh_keys))
         assert not zh_only, f"Only in zh.json: {zh_only}"
         assert not en_only, f"Only in en.json: {en_only}"
 
@@ -227,3 +230,30 @@ class TestDetectLocale:
         monkeypatch.setattr(_locale, "getlocale", boom)
         monkeypatch.setattr(_locale, "getdefaultlocale", boom)
         assert detect_system_locale() == "zh"
+
+
+class TestPlural:
+    def test_one_for_count_1(self) -> None:
+        init("en")
+        # 需 en.json 提供 _test.plural.one / .other
+        assert t("_test.plural", count=1) == "1 step"
+
+    def test_other_for_count_n(self) -> None:
+        init("en")
+        assert t("_test.plural", count=5) == "5 steps"
+
+    def test_zh_falls_back_to_base_key(self) -> None:
+        """中文无复数,直接用基础 key(无 .one/.other)。"""
+        init("zh")
+        assert t("_test.plural", count=1) == "1 步"
+        assert t("_test.plural", count=5) == "5 步"
+
+    def test_count_auto_injected_into_kwargs(self) -> None:
+        init("en")
+        assert "{count}" not in t("_test.plural", count=3)  # 占位符已被填充
+
+    def test_no_count_unchanged(self) -> None:
+        """无 count 参数时行为与现状完全一致。"""
+        init("zh")
+        assert t("app.title") == "Action<DNA>"
+        assert "test" in t("workflow.msg.profile_loaded", name="test")

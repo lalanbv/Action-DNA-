@@ -1,4 +1,6 @@
 {
+  "_test.plural.one": "{count} step",
+  "_test.plural.other": "{count} steps",
   "action.describe.chain": "Chain [{name}] ({count} steps)",
   "action.describe.click_image": "Detect Image [{name}] → {action}",
   "action.describe.click_var": "Coord Var [{name}]",

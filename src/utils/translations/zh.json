@@ -1,4 +1,5 @@
 {
+  "_test.plural": "{count} 步",
   "action.describe.chain": "动作链 [{name}] ({count} 步)",
   "action.describe.click_image": "检测图片 [{name}] → {action}",
   "action.describe.click_var": "坐标变量 [{name}]",
