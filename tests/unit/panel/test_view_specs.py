@@ -14,6 +14,7 @@ import pytest
 
 from src.panel.shared.view_specs import button as btn_spec
 from src.panel.shared.view_specs import checkbox as cb_spec
+from src.panel.shared.view_specs import dialog as dlg_spec
 from src.panel.shared.view_specs import dropdown as dd_spec
 from src.panel.shared.view_specs import entry as entry_spec
 
@@ -149,3 +150,28 @@ def test_qt_dropdown_contract_stores_value_not_display(qt_app):
     assert cb.currentText() == t("action.key.mouse_right")
     parent.deleteLater()
     qt_app.processEvents()
+
+
+# ---- dialog 基类契约校验（DialogSpec，两后端 StepDialogBase）----
+
+
+def test_tk_step_dialog_base_accepts_contract_props(tk_root):
+    """tk StepDialogBase __init__ 接受 action / callback（DialogSpec）。"""
+    from src.panel.dialogs.base_dialog import StepDialogBase
+
+    params = set(inspect.signature(StepDialogBase.__init__).parameters)
+    for prop in dlg_spec.DIALOG_PROPS:
+        assert prop in params, (
+            f"tk StepDialogBase.__init__ 不接受契约 prop {prop!r}"
+        )
+
+
+def test_qt_step_dialog_base_accepts_contract_props(qt_app):
+    """Qt QtStepDialogBase __init__ 接受 action / callback（DialogSpec）。"""
+    from src.panel.qt_backend.dialogs.base_dialog import QtStepDialogBase
+
+    params = set(inspect.signature(QtStepDialogBase.__init__).parameters)
+    for prop in dlg_spec.DIALOG_PROPS:
+        assert prop in params, (
+            f"Qt QtStepDialogBase.__init__ 不接受契约 prop {prop!r}"
+        )
