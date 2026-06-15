@@ -78,6 +78,24 @@ def themed_button(
     return btn
 
 
+def reapply_button_qss(btn: QPushButton) -> None:
+    """主题切换时按当前主题重建按钮 QSS（B4 支持）。
+
+    仅对带 ``dnaBtnStyle`` property 的按钮生效（primary/danger/ghost 等）；
+    secondary 按钮无本地 stylesheet（走全局 QSS），跳过。
+    """
+    style = btn.property("dnaBtnStyle")
+    if not style:
+        return
+    cfg = _BUTTON_STYLES.get(style)
+    if cfg is None:
+        return
+    th = current_theme()
+    bg = getattr(th, cfg["bg_prop"])
+    fg = getattr(th, cfg["fg_prop"])
+    btn.setStyleSheet(_build_button_qss(bg, fg))
+
+
 def themed_entry(parent: QWidget, **kw: Any) -> QLineEdit:
     th = current_theme()
     entry = QLineEdit(parent)

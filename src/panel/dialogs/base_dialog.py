@@ -10,9 +10,11 @@ from typing import Callable
 from src.core.step_types import BaseStep
 from src.panel.canvas.scale import scale_manager, ScrollableFrame
 from src.panel.canvas.theme import current_theme
+from src.panel.canvas.theme.theme_manager import ThemeCallbackMixin
 from src.panel.dialogs.key_picker import SyncedVar
 from src.utils.float_utils import safe_float, safe_int
 from src.panel.widgets import (
+    apply_to_toplevel,
     themed_button,
     themed_checkbutton,
     themed_entry,
@@ -23,11 +25,15 @@ from src.panel.widgets import (
 from src.utils.i18n import t
 
 
-class StepDialogBase(tk.Toplevel, ABC):
+class StepDialogBase(tk.Toplevel, ABC, ThemeCallbackMixin):
     """步骤配置对话框抽象基类。
 
     子类实现 _build_content()、_get_result()，可选覆盖
     _validate_inputs() 和 _populate_fields()。
+
+    主题（B4 修复）：打开期间若用户切换深/浅色，对话框通过
+    :class:`ThemeCallbackMixin` 注册回调，重应用当前主题
+    (:func:`apply_to_toplevel`)；关闭时注销回调防泄漏。
     """
 
     def __init__(
@@ -72,6 +78,19 @@ class StepDialogBase(tk.Toplevel, ABC):
 
         if action:
             self._populate_fields(action)
+
+        # B4：注册主题回调 —— 打开期间切换深/浅色时重应用主题到本 Toplevel。
+        self._init_theme_guard(self._reapply_theme)
+
+    def _reapply_theme(self) -> None:
+        """主题切换回调：把当前主题重新应用到本对话框及其子控件树。"""
+        if self.winfo_exists():
+            apply_to_toplevel(self)
+
+    def destroy(self) -> None:
+        """注销主题回调后再销毁（B4：防泄漏 + 防销毁后回调报错）。"""
+        self._unregister_theme_callback()
+        super().destroy()
 
     @abstractmethod
     def _build_content(self) -> None:

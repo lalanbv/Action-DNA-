@@ -12,15 +12,16 @@ from typing import Callable
 
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
-    QLabel, QLayout, QScrollArea, QVBoxLayout, QWidget,
+    QLabel, QLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
 
 from src.core.step_types import BaseStep
 from src.panel.canvas.theme import current_theme
+from src.panel.canvas.theme.theme_manager import on_theme_change, remove_theme_change
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.panel.qt_backend.widgets import (
-    themed_button, themed_checkbutton, themed_entry,
+    reapply_button_qss, themed_button, themed_checkbutton, themed_entry,
     themed_frame, themed_label, themed_spinbox,
 )
 from src.utils.float_utils import safe_float, safe_int
@@ -99,6 +100,28 @@ class QtStepDialogBase(QDialog):
             self._populate_fields(action)
 
         self._center_on_parent(parent)
+
+        # B4：注册主题回调 —— 打开期间切换深/浅色时重应用主题。
+        self._theme_cb_id: int | None = on_theme_change(self.apply_theme)
+
+    def apply_theme(self) -> None:
+        """主题切换回调：按当前主题重设对话框样式 + 重建带 dnaBtnStyle 的按钮 QSS。
+
+        entry/spinbox/checkbox 等无本地 stylesheet 的控件走主窗口全局 QSS；
+        primary/danger 等按钮有本地 stylesheet（绑死创建时主题色），需逐个重建。
+        """
+        th = current_theme()
+        # 对话框背景（遮蔽全局 QSS 的 dialog 背景，显式重设）
+        self.setStyleSheet(f"QDialog {{ background-color: {th.dialog_bg}; }}")
+        for btn in self.findChildren(QPushButton):
+            reapply_button_qss(btn)
+
+    def done(self, result: int) -> None:
+        """关闭对话框时注销主题回调（B4：防泄漏 + 防销毁后回调报错）。"""
+        if getattr(self, "_theme_cb_id", None) is not None:
+            remove_theme_change(self._theme_cb_id)
+            self._theme_cb_id = None
+        super().done(result)
 
     @abstractmethod
     def _build_content(self) -> None:
