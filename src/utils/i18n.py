@@ -89,11 +89,11 @@ def t(key: str, **kwargs: object) -> str:
     text = translations.get(key)
     if text is None:
         text = fallback.get(key, key)
-    if kwargs:
-        try:
-            text = text.format(**kwargs)
-        except (KeyError, IndexError):
-            pass
+    try:
+        text = text.format(**kwargs)
+    except (KeyError, IndexError, ValueError) as exc:
+        # 安全降级：不崩、不静默。记录 warning + 返回带占位符的原文本（开发者可见）
+        _logger.warning("i18n format failed for key %r: %s", key, exc)
     return text
 
 

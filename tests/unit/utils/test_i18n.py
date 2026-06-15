@@ -163,3 +163,25 @@ class TestTranslationCompleteness:
         en_only = sorted(en_keys - zh_keys)
         assert not zh_only, f"Only in zh.json: {zh_only}"
         assert not en_only, f"Only in en.json: {en_only}"
+
+
+class TestFormatError:
+    """format 错误应安全降级 + 记 warning，不静默、不崩。"""
+
+    def test_missing_kwarg_degrades_with_warning(self, caplog) -> None:
+        init("zh")
+        with caplog.at_level("WARNING"):
+            result = t("chain.msg.profile_loaded")  # value 含 {name} 但未传 name
+        assert "{name}" in result  # 返回带占位符的原文本（可见）
+        assert any("format failed" in r.message for r in caplog.records)
+
+    def test_value_error_does_not_crash(self, caplog) -> None:
+        """原代码未 catch ValueError 会崩；修复后降级。"""
+        init("zh")
+        with caplog.at_level("WARNING"):
+            result = t("app.title", name="x")  # value 无占位符，format 仍应正常
+        assert result == "Action<DNA>"
+
+    def test_successful_format_unchanged(self) -> None:
+        init("zh")
+        assert "test" in t("workflow.msg.profile_loaded", name="test")
