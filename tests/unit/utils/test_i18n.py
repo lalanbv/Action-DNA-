@@ -4,8 +4,6 @@ key 完整性校验(missing/mismatch/redundant/dynamic)已由 ``src/utils/i18n_l
 统一提供,pytest gate 见 ``test_i18n_keys.py``。本文件只覆盖核心运行时 API。
 """
 
-import pytest
-
 from src.utils.i18n import (
     detect_system_locale,
     get_available_languages,
