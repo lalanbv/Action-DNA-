@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 from src.core.error.exceptions import PluginPermissionError
 from src.core.plugins.plugin_node_registry import PluginNodeRegistry
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ class PluginContext:
         """访问截图服务（需要 'screen_capture' 权限）。"""
         self._check_permission("screen_capture")
         if self._screen_capture is None:
-            raise RuntimeError("截图服务未初始化")
+            raise RuntimeError(t("plugins.exc.screen_capture_not_initialized"))
         return self._screen_capture
 
     @property
@@ -123,7 +124,7 @@ class PluginContext:
         """访问模板匹配服务（需要 'template_matcher' 权限）。"""
         self._check_permission("template_matcher")
         if self._template_matcher is None:
-            raise RuntimeError("模板匹配服务未初始化")
+            raise RuntimeError(t("plugins.exc.template_matcher_not_initialized"))
         return self._template_matcher
 
     @property
@@ -131,7 +132,7 @@ class PluginContext:
         """访问输入控制器（需要 'input_control' 权限）。"""
         self._check_permission("input_control")
         if self._input_controller is None:
-            raise RuntimeError("输入控制器未初始化")
+            raise RuntimeError(t("plugins.exc.input_controller_not_initialized"))
         return self._input_controller
 
     # ---- 文件和网络权限 ----
@@ -175,7 +176,7 @@ class PluginContext:
         from src.core.plugins.dialog_registry import DialogRegistry
 
         DialogRegistry.register(full_key, dialog_class)
-        logger.debug("插件 '%s' 注册对话框: %s", self._plugin_id, full_key)
+        logger.debug(t("plugins.log.dialog_registered", plugin_id=self._plugin_id, full_key=full_key))
 
 
 class _FileReaderProxy:
@@ -310,7 +311,7 @@ class _NetworkProxy:
 
     def request(self, method: str, url: str, **kwargs: object) -> object:
         self._validate_url(url)
-        logger.info("插件 '%s' 网络请求: %s %s", self._plugin_id, method, url)
+        logger.info(t("plugins.log.network_request", plugin_id=self._plugin_id, method=method, url=url))
 
         import urllib.request
         req = urllib.request.Request(url, method=method)

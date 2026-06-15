@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from src.core.plugins.plugin_context import PluginContext
 from src.core.plugins.plugin_interface import PluginInterface, PluginMetadata
+from src.utils.i18n import t
 from src.utils.platform import IS_FROZEN
 from src.core.plugins.capabilities import (
     DescriptorPlugin,
@@ -122,9 +123,9 @@ class PluginLoader:
         path = Path(directory)
         if not path.exists():
             path.mkdir(parents=True, exist_ok=True)
-            logger.debug("创建插件扫描目录: %s", path)
+            logger.debug(t("plugins.log.scan_dir_created", path=path))
         self._scan_dirs.append(path)
-        logger.debug("添加插件扫描目录: %s", path)
+        logger.debug(t("plugins.log.scan_dir_added", path=path))
 
     def scan(self) -> list[str]:
         """扫描所有扫描目录，发现插件。
@@ -148,13 +149,13 @@ class PluginLoader:
                 plugin_id = entry.name
 
                 if plugin_id in self._plugins:
-                    logger.debug("插件 '%s' 已存在，跳过", plugin_id)
+                    logger.debug(t("plugins.log.skip_existing", plugin_id=plugin_id))
                     continue
 
                 try:
                     metadata = self._parse_manifest(manifest_path)
                 except Exception as e:
-                    logger.error("解析插件清单失败 '%s': %s", manifest_path, e)
+                    logger.error(t("plugins.log.parse_manifest_failed", manifest_path=manifest_path, error=e))
                     continue
 
                 errors = self._validate_metadata(metadata)
@@ -210,7 +211,7 @@ class PluginLoader:
                 if entry:
                     entry.state = PluginState.ERROR
                     entry.error_message = str(e)
-                logger.error("加载插件 '%s' 失败: %s", plugin_id, e)
+                logger.error(t("plugins.log.load_failed", plugin_id=plugin_id, error=e))
 
         return loaded, failed
 
@@ -241,7 +242,7 @@ class PluginLoader:
                 failed.append(plugin_id)
                 entry.state = PluginState.ERROR
                 entry.error_message = str(e)
-                logger.error("初始化插件 '%s' 失败: %s", plugin_id, e)
+                logger.error(t("plugins.log.initialize_failed", plugin_id=plugin_id, error=e))
 
         return initialized, failed
 
@@ -273,7 +274,7 @@ class PluginLoader:
                 failed.append(plugin_id)
                 entry.state = PluginState.ERROR
                 entry.error_message = str(e)
-                logger.error("激活插件 '%s' 失败: %s", plugin_id, e)
+                logger.error(t("plugins.log.activate_failed", plugin_id=plugin_id, error=e))
 
         return activated, failed
 
@@ -473,14 +474,14 @@ class PluginLoader:
             try:
                 entry.instance.on_unload()
             except Exception as e:
-                logger.warning("插件 '%s' on_unload() 异常: %s", plugin_id, e)
+                logger.warning(t("plugins.log.on_unload_exception", plugin_id=plugin_id, error=e))
 
         if entry.context:
             for type_key in entry.context.registered_types:
                 try:
                     self._node_registry.unregister(type_key)
                 except Exception as e:
-                    logger.warning("注销节点 '%s' 失败: %s", type_key, e)
+                    logger.warning(t("plugins.log.unregister_node_failed", type_key=type_key, error=e))
 
         entry.state = PluginState.UNLOADED
         entry.instance = None
@@ -500,7 +501,7 @@ class PluginLoader:
                 with contextlib.suppress(ValueError):
                     sys.path.remove(parent_dir)
 
-        logger.info("插件已卸载: %s", plugin_id)
+        logger.info(t("plugins.log.unloaded", plugin_id=plugin_id))
 
     def reload(self, plugin_id: str) -> None:
         """重新加载插件（先卸载再加载）。"""
@@ -511,7 +512,7 @@ class PluginLoader:
                 if entry.state in (PluginState.LOADED, PluginState.ACTIVE):
                     self.unload(plugin_id)
             self.load(plugin_id)
-        logger.info("插件已重载: %s", plugin_id)
+        logger.info(t("plugins.log.reloaded", plugin_id=plugin_id))
 
     def unload_all(self) -> list[str]:
         """卸载所有已加载的插件（逆序卸载以尊重依赖关系）。"""
@@ -526,7 +527,7 @@ class PluginLoader:
                     self.unload(plugin_id)
                     unloaded.append(plugin_id)
                 except Exception as e:
-                    logger.error("卸载插件 '%s' 失败: %s", plugin_id, e)
+                    logger.error(t("plugins.log.unload_failed", plugin_id=plugin_id, error=e))
         return unloaded
 
     # ---- 热重载 ----
@@ -534,7 +535,7 @@ class PluginLoader:
     def start_watcher(self) -> None:
         """启动文件监控线程。"""
         if not self._enable_hot_reload:
-            logger.info("热重载未启用")
+            logger.info(t("plugins.log.hot_reload_disabled"))
             return
 
         if self._watcher_thread is not None and self._watcher_thread.is_alive():
@@ -547,14 +548,14 @@ class PluginLoader:
             name="PluginWatcher",
         )
         self._watcher_thread.start()
-        logger.info("插件热重载监控已启动")
+        logger.info(t("plugins.log.watcher_started"))
 
     def stop_watcher(self) -> None:
         """停止文件监控线程。"""
         self._stop_watcher.set()
         if self._watcher_thread:
             self._watcher_thread.join(timeout=5.0)
-        logger.info("插件热重载监控已停止")
+        logger.info(t("plugins.log.watcher_stopped"))
 
     def _watch_loop(self) -> None:
         """文件变更监控循环。"""
@@ -562,7 +563,7 @@ class PluginLoader:
             try:
                 self._check_file_changes()
             except Exception as e:
-                logger.error("插件热重载检查异常: %s", e)
+                logger.error(t("plugins.log.watcher_check_exception", error=e))
             self._stop_watcher.wait(self._watch_interval)
 
     def _check_file_changes(self) -> None:
@@ -795,7 +796,7 @@ class PluginLoader:
             json.dump(data, f, ensure_ascii=False, indent=4)
             f.write("\n")
 
-        logger.info("插件清单已更新: %s → %s", plugin_id, list(updates.keys()))
+        logger.info(t("plugins.log.manifest_updated", plugin_id=plugin_id, updated_keys=list(updates.keys())))
 
     def get_registered_node_types(self, plugin_id: str) -> list[str]:
         """获取插件注册的节点类型列表。"""
