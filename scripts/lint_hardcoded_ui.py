@@ -92,12 +92,29 @@ def scan_tree(root: Path) -> list[Finding]:
     return all_findings
 
 
+def check_baseline(count: int, baseline: int) -> bool:
+    """CI 门禁基线判定（规格 §5.3 增量门禁）。
+
+    违规数 ``count`` 不超过基线 ``baseline`` → 通过（True）；超出 → 失败（False）。
+    允许清理减少基线，禁止增量引入硬编码。
+    """
+    return count <= baseline
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="硬编码色彩/尺寸 lint（Phase 2 §5.3）")
     parser.add_argument("--root", default=DEFAULT_ROOT, help="扫描根目录")
     parser.add_argument(
         "--format", choices=("markdown", "count"), default="markdown",
         help="输出格式（默认 markdown 清单）",
+    )
+    parser.add_argument(
+        "--baseline", type=int, default=None,
+        help="CI 门禁基线：违规数超过此值时非零退出（规格 §5.3 增量门禁）",
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="CI 门禁模式：配合 --baseline，超基线返回 1，否则 0",
     )
     args = parser.parse_args(argv)
 
@@ -107,14 +124,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0  # 不阻塞
 
     findings = scan_tree(root)
+    count = len(findings)
+
+    # CI 门禁模式：基线判定优先，控制退出码（默认输出 count，便于日志）
+    if args.check:
+        if args.baseline is None:
+            print("[lint] --check 需要 --baseline N", file=sys.stderr)
+            return 2
+        passed = check_baseline(count, args.baseline)
+        status = "PASS" if passed else "FAIL"
+        print(
+            f"[lint] {status}: {count} 项违规，基线 {args.baseline} "
+            f"（{'允许清理减少，禁止新增' if passed else '超出基线，请改用 tokens/常量'}）"
+        )
+        return 0 if passed else 1
+
     if args.format == "count":
-        print(len(findings))
+        print(count)
         return 0
 
     # markdown 清单
     colors = [f for f in findings if f.kind == "color"]
     dims = [f for f in findings if f.kind == "dimension"]
-    print(f"# 硬编码色彩/尺寸待清理清单（{len(findings)} 项，规格 §5.3）\n")
+    print(f"# 硬编码色彩/尺寸待清理清单（{count} 项，规格 §5.3）\n")
     print(f"## 色彩（{len(colors)}）\n")
     for f in colors:
         print(f.as_markdown())

@@ -1,0 +1,58 @@
+# Action<DNA> CI —— Phase 2 §5.3 门禁
+#
+# 两道门禁：
+# 1. 硬编码色彩/尺寸 lint：基线机制，允许清理减少，禁止新增（规格 §5.3）。
+# 2. Qt 后端测试：offscreen 无头，覆盖 dropdown/dialog 契约等。
+#
+# Tk 测试因 Tcl/Tk9 + Python 3.14 多 root 不稳定（见 memory env-quirks），
+# CI 仅跑 Qt（offscreen）+ 非 panel 的单元测试，与本地回归策略一致。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-hardcoded-ui:
+    name: 硬编码色彩/尺寸门禁（基线）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 运行 lint 门禁
+        # 基线 254：当前 src/panel 硬编码违规数（2026-06-15 快照）。
+        # 清理后递减此值；禁止新增（规格 §5.3「增量门禁」）。
+        run: python scripts/lint_hardcoded_ui.py --check --baseline 254
+
+  qt-tests:
+    name: Qt 后端测试（offscreen）
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      DNA_GUI_BACKEND: qt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装 PySide6
+        run: pip install PySide6
+      - name: 安装项目依赖（最小子集）
+        run: |
+          pip install pytest pytest-timeout pytest-cov
+          pip install opencv-python-headless numpy Pillow mss
+      - name: 运行 Qt + 契约 + lint 测试
+        run: |
+          python -m pytest tests/unit/panel/qt/ \
+            tests/unit/panel/test_view_specs.py \
+            tests/unit/panel/test_lint_hardcoded_ui.py \
+            tests/unit/panel/test_workflow_ops.py \
+            -q --tb=short

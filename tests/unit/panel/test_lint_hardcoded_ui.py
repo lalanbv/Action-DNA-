@@ -81,3 +81,20 @@ def test_lint_finding_has_location_and_value(tmp_path):
     assert f.file == str(sample)
     assert f.line == 1
     assert "#1e1e1e" in f.value
+
+
+# ---- CI 门禁：基线机制（规格 §5.3，增量门禁）----
+# 当前 254 项为基线，check_baseline 允许清理减少基线，禁止新增。
+
+
+def test_check_baseline_passes_when_at_or_below():
+    """违规数 <= 基线 → 通过（return True）。"""
+    lint = _load_lint_module()
+    assert lint.check_baseline(count=254, baseline=254) is True
+    assert lint.check_baseline(count=100, baseline=254) is True  # 清理后减少
+
+
+def test_check_baseline_fails_when_exceeds():
+    """违规数 > 基线 → 失败（return False），阻止增量引入硬编码。"""
+    lint = _load_lint_module()
+    assert lint.check_baseline(count=255, baseline=254) is False
