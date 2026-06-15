@@ -459,16 +459,17 @@ class QtWorkflowActionsMixin:
     # ── Copy/Paste ────────────────────────────────────────
 
     def _on_copy(self, node_ids: list[str]) -> None:
-        if not node_ids:
-            return
-        self._clipboard = self._controller.copy_nodes(node_ids)
-        self._paste_offset = 0
+        from src.panel.shared.controllers.workflow_ops import copy_to_clipboard
+
+        self._clipboard = copy_to_clipboard(self._controller, node_ids)
+        if self._clipboard is not None:
+            self._paste_offset = 0
 
     def _on_paste(self) -> None:
         if not self._clipboard:
             return
         self._paste_offset += 1
-        offset = self._paste_offset * 30
+        offset = self._paste_offset * self._controller.PASTE_OFFSET
         new_nodes = self._controller.paste_nodes(list(self._clipboard), offset_x=offset, offset_y=offset)
         self._canvas.render_graph(self._model.graph)
         self._update_status_bar()
@@ -477,7 +478,11 @@ class QtWorkflowActionsMixin:
         if not node_ids or self._controller.is_executor_running:
             return
         nodes = self._controller.copy_nodes(node_ids)
-        new_nodes = self._controller.paste_nodes(nodes, offset_x=40, offset_y=40)
+        new_nodes = self._controller.paste_nodes(
+            nodes,
+            offset_x=self._controller.DUPLICATE_OFFSET_X,
+            offset_y=self._controller.DUPLICATE_OFFSET_Y,
+        )
         self._canvas.render_graph(self._model.graph)
         self._update_status_bar()
 

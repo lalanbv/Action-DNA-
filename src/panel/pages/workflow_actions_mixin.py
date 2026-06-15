@@ -534,10 +534,11 @@ class WorkflowActionsMixin:
     # ── 复制/粘贴 ──────────────────────────────────────────
 
     def _on_copy(self, node_ids: list[str]) -> None:
-        if not node_ids:
-            return
-        self._clipboard = self._controller.copy_nodes(node_ids)
-        self._paste_offset = 0
+        from src.panel.shared.controllers.workflow_ops import copy_to_clipboard
+
+        self._clipboard = copy_to_clipboard(self._controller, node_ids)
+        if self._clipboard is not None:
+            self._paste_offset = 0
 
     def _on_paste(self) -> None:
         if not self._clipboard:

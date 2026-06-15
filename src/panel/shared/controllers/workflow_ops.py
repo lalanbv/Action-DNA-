@@ -126,3 +126,25 @@ def import_steps_before_end(
         end_edge=end_edge,
         end_position=end_position,
     )
+
+
+def copy_to_clipboard(
+    controller: "WorkflowController", node_ids: list[str],
+) -> list[FlowNode] | None:
+    """复制选中节点到剪贴板（D5 下沉，两后端 ``_on_copy`` 逐字相同的纯逻辑）。
+
+    Args:
+        controller: WorkflowController，提供 ``copy_nodes``。
+        node_ids: 待复制的节点 id 列表。
+
+    Returns:
+        ``controller.copy_nodes(node_ids)`` 的结果（节点副本列表）；
+        ``node_ids`` 为空时返回 ``None``（调用方据此跳过粘贴）。
+
+    说明：纯逻辑、无视觉副作用 —— 两后端 ``_on_copy`` 在此之前的实现完全相同
+    （空检查 + 委托 controller），唯一差异是各自重置 ``self._paste_offset``，
+    该重置保留在 View 层（与粘贴视觉回放绑定，不下沉）。
+    """
+    if not node_ids:
+        return None
+    return controller.copy_nodes(node_ids)

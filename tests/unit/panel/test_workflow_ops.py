@@ -1,6 +1,6 @@
-"""D5 共享工作流编排纯逻辑测试 — import_steps_before_end。
+"""D5 共享工作流编排纯逻辑测试 — import_steps_before_end / copy_to_clipboard。
 
-验证从两后端 workflow_actions_mixin._import_steps 提取出的图变异编排
+验证从两后端 workflow_actions_mixin 提取出的图变异/剪贴板纯逻辑
 （规格 §4.3 D5）。纯逻辑、无视觉副作用，用 fake graph/controller 测试。
 """
 
@@ -13,6 +13,7 @@ import pytest
 from src.core.action import ActionType
 from src.panel.shared.controllers.workflow_ops import (
     ImportStepsResult,
+    copy_to_clipboard,
     import_steps_before_end,
 )
 
@@ -97,6 +98,12 @@ class _FakeController:
         node = self._graph.get_node(node_id)
         if node is not None:
             node.action = action
+
+    def copy_nodes(self, node_ids):
+        """模拟 WorkflowController.copy_nodes：返回节点副本列表。"""
+        return [
+            _FakeNode(nid) for nid in node_ids if nid in self._graph.nodes
+        ]
 
 
 @pytest.fixture
@@ -218,3 +225,62 @@ def test_anchor_from_existing_node_not_default(graph_controller):
     # base_x=50（truthy）, base_y=70 → first_y=170
     assert result.imported[0].node.pos_x == 50
     assert result.imported[0].node.pos_y == 170
+
+
+# ---- copy_to_clipboard 测试（D5：_on_copy 下沉纯逻辑）----
+
+
+def test_copy_to_clipboard_returns_controller_result(graph_controller):
+    """非空 node_ids → 返回 controller.copy_nodes() 的结果，透传不变形。"""
+    _graph, controller = graph_controller
+    node_ids = ["start", "end"]
+    result = copy_to_clipboard(controller, node_ids)
+    # controller.copy_nodes 对每个存在的节点返回一个副本
+    assert result is not None
+    assert len(result) == 2
+    assert [n.node_id for n in result] == ["start", "end"]
+
+
+def test_copy_empty_ids_is_noop(graph_controller):
+    """空 node_ids → 直接返回 None，不调用 controller.copy_nodes。"""
+    _graph, controller = graph_controller
+    assert copy_to_clipboard(controller, []) is None
+
+
+def test_copy_does_not_touch_graph(graph_controller):
+    """copy 是纯逻辑：不改变图（只读 controller.copy_nodes）。"""
+    graph, controller = graph_controller
+    edges_before = set(graph._edges)
+    nodes_before = set(graph.nodes)
+    copy_to_clipboard(controller, ["start"])
+    assert set(graph._edges) == edges_before
+    assert set(graph.nodes) == nodes_before
+
+
+# ---- Qt 后端 _on_paste/_on_duplicate_selected 魔法数字回归（D5/U2）----
+# 锁定不变量：Qt 后端粘贴/复制偏移必须取自 controller 命名常量
+# (PASTE_OFFSET / DUPLICATE_OFFSET_X / DUPLICATE_OFFSET_Y)，与 tk 后端一致，
+# 不再出现裸魔法数字（* 30 / offset_x=40 / offset_y=40）。
+
+
+def _qt_mixin_source() -> str:
+    with open(
+        "src/panel/qt_backend/pages/workflow_actions_mixin.py", encoding="utf-8"
+    ) as fh:
+        return fh.read()
+
+
+def test_qt_paste_uses_controller_constant_not_magic_number():
+    """Qt _on_paste 偏移来自 self._controller.PASTE_OFFSET，非裸 ``* 30``。"""
+    src = _qt_mixin_source()
+    assert "* 30" not in src, "Qt _on_paste 仍有裸魔法数字 * 30"
+    assert "self._controller.PASTE_OFFSET" in src
+
+
+def test_qt_duplicate_uses_controller_constants_not_magic_40():
+    """Qt _on_duplicate_selected 偏移来自 controller 命名常量，非裸 ``40``。"""
+    src = _qt_mixin_source()
+    assert "offset_x=40" not in src, "Qt _on_duplicate 仍有裸魔法数字 offset_x=40"
+    assert "offset_y=40" not in src, "Qt _on_duplicate 仍有裸魔法数字 offset_y=40"
+    assert "self._controller.DUPLICATE_OFFSET_X" in src
+    assert "self._controller.DUPLICATE_OFFSET_Y" in src
