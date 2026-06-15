@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QHBoxLayout
 
 from src.core.step_types import BaseStep, ClickPosStep
 from src.panel.qt_backend.widgets import (
-    themed_combobox, themed_checkbutton, themed_entry, themed_frame, themed_label,
+    themed_dropdown, themed_checkbutton, themed_entry, themed_frame, themed_label,
 )
 from src.utils.i18n import t
 
@@ -36,8 +36,13 @@ class QtClickPosDialog(QtStepDialogBase):
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(0, 0, 0, 0)
         themed_label(btn_row, text=t("dialog.label.mouse_button"))
-        self._vars["button_combo"] = themed_combobox(
-            btn_row, items=["left", "right", "middle"],
+        self._vars["button_combo"] = themed_dropdown(
+            btn_row,
+            options=[
+                ("left", "action.key.mouse_left"),
+                ("right", "action.key.mouse_right"),
+                ("middle", "action.key.mouse_middle"),
+            ],
         )
         btn_layout.addWidget(self._vars["button_combo"])
         self._form_layout.addRow(btn_row)
@@ -58,7 +63,7 @@ class QtClickPosDialog(QtStepDialogBase):
         self._vars["pos_y"].setValue(action.pos_y)
         self._vars["clicks"].setValue(action.clicks)
         self._vars["hold_duration"].setValue(action.hold_duration)
-        idx = self._vars["button_combo"].findText(action.button or "left")
+        idx = self._vars["button_combo"].findData(action.button or "left")
         if idx >= 0:
             self._vars["button_combo"].setCurrentIndex(idx)
         self._vars["use_coord_var_cb"].setChecked(action.use_coord_var)
@@ -71,7 +76,7 @@ class QtClickPosDialog(QtStepDialogBase):
         step.pos_y = self._get_int("pos_y", min_val=0, max_val=9999, default=0)
         step.clicks = self._get_int("clicks", min_val=1, max_val=5, default=1)
         step.hold_duration = self._get_float("hold_duration", min_val=0.0, max_val=30.0, default=0.0)
-        step.button = self._vars["button_combo"].currentText()
+        step.button = self._vars["button_combo"].currentData()
         step.use_coord_var = self._vars["use_coord_var_cb"].isChecked()
         step.coord_var_name = self._vars["coord_var_name"].text()
         self._apply_common(step)

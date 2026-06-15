@@ -14,6 +14,7 @@ import pytest
 
 from src.panel.shared.view_specs import button as btn_spec
 from src.panel.shared.view_specs import checkbox as cb_spec
+from src.panel.shared.view_specs import dropdown as dd_spec
 from src.panel.shared.view_specs import entry as entry_spec
 
 #: 契约 → (props 列表)。
@@ -21,6 +22,7 @@ CONTRACTS = {
     "button": btn_spec.BUTTON_PROPS,
     "entry": entry_spec.ENTRY_PROPS,
     "checkbox": cb_spec.CHECKBOX_PROPS,
+    "dropdown": dd_spec.DROPDOWN_PROPS,
 }
 
 
@@ -45,6 +47,7 @@ def test_tk_factory_signatures_accept_contract_props(tk_root):
         "button": tkw.themed_button,
         "entry": tkw.themed_entry,
         "checkbox": tkw.themed_checkbutton,
+        "dropdown": tkw.themed_dropdown,
     }
     for name, fn in factories.items():
         params = set(inspect.signature(fn).parameters)
@@ -92,6 +95,7 @@ def test_qt_factory_signatures_accept_contract_props(qt_app):
         "button": qtw.themed_button,
         "entry": qtw.themed_entry,
         "checkbox": qtw.themed_checkbutton,
+        "dropdown": qtw.themed_dropdown,
     }
     parent = QWidget()
     for name, fn in factories.items():
@@ -118,5 +122,30 @@ def test_qt_button_accepts_all_variants(qt_app):
     for variant in ("primary", "secondary", "danger", "ghost"):
         btn = themed_button(parent, text="x", style=variant)
         assert isinstance(btn, QPushButton)
+    parent.deleteLater()
+    qt_app.processEvents()
+
+
+def test_qt_dropdown_contract_stores_value_not_display(qt_app):
+    """Qt themed_dropdown 满足 DropdownSpec：options 元组 + currentData 存 value。"""
+    from PySide6.QtWidgets import QWidget
+
+    from src.utils.i18n import t
+    from src.panel.qt_backend.widgets import themed_dropdown
+
+    parent = QWidget()
+    cb = themed_dropdown(
+        parent,
+        options=[
+            ("left", "action.key.mouse_left"),
+            ("right", "action.key.mouse_right"),
+        ],
+        value="right",
+    )
+    # 显示文本是 i18n 翻译，非裸 key
+    assert cb.itemText(0) == t("action.key.mouse_left")
+    # currentData 返回 internal value（契约语义），currentText 返回翻译
+    assert cb.currentData() == "right"
+    assert cb.currentText() == t("action.key.mouse_right")
     parent.deleteLater()
     qt_app.processEvents()

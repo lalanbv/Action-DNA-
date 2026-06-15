@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel
 from src.core.action import DetectMode, FoundAction
 from src.core.step_types import BaseStep, ClickImageStep
 from src.panel.qt_backend.widgets import (
-    themed_button, themed_entry, themed_frame, themed_spinbox, themed_combobox,
+    themed_button, themed_entry, themed_frame, themed_spinbox, themed_dropdown,
 )
 from src.utils.i18n import t
 
@@ -23,16 +23,16 @@ class QtClickImageDialog(QtStepDialogBase):
         super().__init__(*args, **kwargs)
 
     def _build_content(self) -> None:
-        self._fa_labels = {fa: t(key) for fa, key in _FOUND_ACTION_I18N.items()}
-        self._dm_labels = {dm: t(key) for dm, key in _DETECT_MODE_I18N.items()}
+        self._fa_labels = dict(_FOUND_ACTION_I18N)
+        self._dm_labels = dict(_DETECT_MODE_I18N)
 
         # 多模板图片管理器(主图 + 状态备用图,替代单行 image_path + 阈值)
         self._mt_editor = MultiTemplateEditorQt(self)
         self._add_row(t("dialog.label.template_image"), self._mt_editor)
 
         # Detect mode
-        self._vars["detect_mode_combo"] = themed_combobox(
-            self, items=list(self._dm_labels.values()),
+        self._vars["detect_mode_combo"] = themed_dropdown(
+            self, options=list(self._dm_labels.items()),
         )
         self._add_row(t("dialog.label.detect_mode"), self._vars["detect_mode_combo"])
 
@@ -51,8 +51,8 @@ class QtClickImageDialog(QtStepDialogBase):
         )
 
         # Found action
-        self._vars["found_action_combo"] = themed_combobox(
-            self, items=list(self._fa_labels.values()),
+        self._vars["found_action_combo"] = themed_dropdown(
+            self, options=list(self._fa_labels.items()),
         )
         self._vars["found_action_combo"].currentIndexChanged.connect(
             self._on_found_action_changed,
@@ -89,12 +89,10 @@ class QtClickImageDialog(QtStepDialogBase):
         self._on_found_action_changed()
 
     def _on_found_action_changed(self) -> None:
-        label = self._vars["found_action_combo"].currentText()
-        fa_long = self._fa_labels.get(FoundAction.LONG_PRESS, "")
-        fa_drag = self._fa_labels.get(FoundAction.DRAG_TO, "")
-        if label == fa_long:
+        fa = self._vars["found_action_combo"].currentData()
+        if fa == FoundAction.LONG_PRESS:
             self._drag_row.hide()
-        elif label == fa_drag:
+        elif fa == FoundAction.DRAG_TO:
             self._drag_row.show()
         else:
             self._drag_row.hide()
@@ -108,21 +106,15 @@ class QtClickImageDialog(QtStepDialogBase):
             strategy=action.match_strategy,
             global_threshold=action.threshold,
         )
-        for k, v in self._dm_labels.items():
-            if k == action.detect_mode:
-                idx = self._vars["detect_mode_combo"].findText(v)
-                if idx >= 0:
-                    self._vars["detect_mode_combo"].setCurrentIndex(idx)
-                break
+        idx = self._vars["detect_mode_combo"].findData(action.detect_mode)
+        if idx >= 0:
+            self._vars["detect_mode_combo"].setCurrentIndex(idx)
         self._vars["retry_count"].setValue(action.retry_count)
         self._vars["retry_wait_min"].setValue(action.retry_wait_min)
         self._vars["retry_wait_max"].setValue(action.retry_wait_max)
-        for k, v in self._fa_labels.items():
-            if k == action.found_action:
-                idx = self._vars["found_action_combo"].findText(v)
-                if idx >= 0:
-                    self._vars["found_action_combo"].setCurrentIndex(idx)
-                break
+        idx = self._vars["found_action_combo"].findData(action.found_action)
+        if idx >= 0:
+            self._vars["found_action_combo"].setCurrentIndex(idx)
         self._vars["hold_duration"].setValue(action.hold_duration)
         self._vars["drag_offset_x"].setValue(action.drag_offset_x)
         self._vars["drag_offset_y"].setValue(action.drag_offset_y)
@@ -149,15 +141,7 @@ class QtClickImageDialog(QtStepDialogBase):
         step.drag_offset_x = self._get_int("drag_offset_x", default=0)
         step.drag_offset_y = self._get_int("drag_offset_y", default=0)
         step.save_coord_name = self._vars["save_coord_name"].text()
-        dm_label = self._vars["detect_mode_combo"].currentText()
-        for k, v in self._dm_labels.items():
-            if v == dm_label:
-                step.detect_mode = k
-                break
-        fa_label = self._vars["found_action_combo"].currentText()
-        for k, v in self._fa_labels.items():
-            if v == fa_label:
-                step.found_action = k
-                break
+        step.detect_mode = self._vars["detect_mode_combo"].currentData()
+        step.found_action = self._vars["found_action_combo"].currentData()
         self._apply_common(step)
         return step

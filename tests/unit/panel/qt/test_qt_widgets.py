@@ -24,6 +24,7 @@ from src.panel.qt_backend.widgets import (
     themed_checkbutton,
     themed_radiobutton,
     themed_combobox,
+    themed_dropdown,
     themed_labelframe,
     themed_treeview,
     themed_separator,
@@ -123,6 +124,59 @@ class TestThemedCombobox:
         cb = themed_combobox(None, items=["a", "b", "c"])
         assert cb.count() == 3
         assert cb.itemText(0) == "a"
+
+
+class TestThemedDropdown:
+    """themed_dropdown —— i18n 对齐 tk 语义（options=[(value, i18n_key)]）。
+
+    规格 §5.2 U2：统一 dropdown/combobox 命名 + props。Qt dropdown 接受
+    (value, i18n_key) 元组，t() 渲染显示文本、itemData 存 value，
+    currentData() 取 value（与 tk get_value() 语义一致）。
+    """
+
+    def test_accepts_options_tuples_and_translates_display(self):
+        from src.utils.i18n import t
+
+        cb = themed_dropdown(
+            None,
+            options=[
+                ("left", "action.key.mouse_left"),
+                ("right", "action.key.mouse_right"),
+            ],
+        )
+        assert cb.count() == 2
+        # 显示文本是 i18n key 的翻译，不是裸 key
+        assert cb.itemText(0) == t("action.key.mouse_left")
+        assert cb.itemText(1) == t("action.key.mouse_right")
+
+    def test_item_data_stores_value_not_display(self):
+        """itemData 存 value，currentData() 返回 value（非翻译文本）。"""
+        cb = themed_dropdown(
+            None,
+            options=[("left", "action.key.mouse_left"), ("right", "action.key.mouse_right")],
+        )
+        assert cb.itemData(0) == "left"
+        assert cb.itemData(1) == "right"
+        cb.setCurrentIndex(1)
+        assert cb.currentData() == "right"
+
+    def test_find_data_locates_value(self):
+        """findData 按 value 定位（替代旧 findText）。"""
+        cb = themed_dropdown(
+            None,
+            options=[("left", "action.key.mouse_left"), ("right", "action.key.mouse_right")],
+        )
+        idx = cb.findData("right")
+        assert idx == 1
+
+    def test_initial_value_selects_correct_item(self):
+        """value= 指定初始选中项（按 value，非显示文本）。"""
+        cb = themed_dropdown(
+            None,
+            options=[("left", "action.key.mouse_left"), ("right", "action.key.mouse_right")],
+            value="right",
+        )
+        assert cb.currentData() == "right"
 
 
 class TestThemedLabelframe:

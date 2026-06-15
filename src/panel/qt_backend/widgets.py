@@ -165,18 +165,61 @@ def themed_radiobutton(
     return rb
 
 
-def themed_combobox(parent: QWidget, **kw: Any) -> QComboBox:
+def themed_dropdown(
+    parent: QWidget,
+    options: list[tuple[str, str]] | None = None,
+    *,
+    value: str | None = None,
+    **kw: Any,
+) -> QComboBox:
+    """下拉选择框（i18n 对齐 tk ``themed_dropdown`` 语义，规格 §5.2 U2）。
+
+    与 tkinter ``themed_dropdown(options=[(value, i18n_key)])`` 对齐：
+    - ``options`` 为 ``[(internal_value, i18n_key), ...]``，显示文本经 ``t()`` 翻译。
+    - ``itemData`` 存 ``internal_value``，取值用 ``currentData()`` / 定位用 ``findData()``
+      （而非旧 ``currentText()``，避免存入翻译文本）。
+    - ``value=`` 指定初始选中项（按 value，非显示文本）。
+
+    兼容：``items=`` 纯字符串列表仍接受（过渡期，已存在调用点用），作为
+    ``(text, text)`` 即 value==显示文本，无 i18n 翻译。
+    """
+    from src.utils.i18n import t
+
     th = current_theme()
     combo = QComboBox(parent)
     combo.setFont(_qt_font(th.font_body))
-    if "items" in kw:
-        combo.addItems(kw.pop("items"))
-    if "editable" in kw:
-        combo.setEditable(kw.pop("editable"))
+
+    # 优先 options 元组（i18n 对齐）；兼容旧 items 纯字符串
+    raw_options = options if options is not None else None
+    legacy_items = kw.pop("items", None)
+    if legacy_items is not None and raw_options is None:
+        raw_options = [(str(it), str(it)) for it in legacy_items]
+    if raw_options:
+        for internal_value, i18n_key in raw_options:
+            # i18n_key 可能已是翻译后文本（无对应 key 时 t() 原样返回）
+            display = t(i18n_key) if i18n_key else internal_value
+            combo.addItem(display, userData=internal_value)
+
+    if kw.pop("editable", False):
+        combo.setEditable(True)
     obj_name = kw.pop("objectName", "")
     if obj_name:
         combo.setObjectName(obj_name)
+
+    if value is not None:
+        idx = combo.findData(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
     return combo
+
+
+def themed_combobox(parent: QWidget, **kw: Any) -> QComboBox:
+    """[Deprecated] 旧名，等价 ``themed_dropdown``（规格 §5.2 U2 统一命名）。
+
+    过渡保留以避免 import 风暴；新代码请用 ``themed_dropdown``。
+    """
+    return themed_dropdown(parent, **kw)
 
 
 def themed_labelframe(

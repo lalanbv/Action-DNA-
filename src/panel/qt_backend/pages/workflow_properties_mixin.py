@@ -19,7 +19,7 @@ from src.panel.canvas.node_renderer import _type_label as node_type_label
 from src.panel.models.enums import EdgeLabel
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.panel.qt_backend.widgets import (
-    themed_button, themed_checkbutton, themed_combobox, themed_entry,
+    themed_button, themed_checkbutton, themed_dropdown, themed_entry,
     themed_spinbox,
 )
 from src.utils.i18n import t
@@ -247,9 +247,9 @@ class QtWorkflowPropertiesMixin:
         ec_title.setStyleSheet(f"color: {th.text_primary}; font-weight: bold; font-size: {sm.s(10)}px;")
         ec_layout.addWidget(ec_title)
 
-        strategy_labels = [t(f"error_config.{key}") for key, _ in self._STRATEGY_OPTIONS]
+        strategy_options = [(v, f"error_config.{k}") for k, v in self._STRATEGY_OPTIONS]
         current_idx = self._find_strategy_index(ec.strategy if ec else None)
-        strategy_combo = themed_combobox(None, items=strategy_labels)
+        strategy_combo = themed_dropdown(None, options=strategy_options)
         strategy_combo.setCurrentIndex(current_idx)
         ec_layout.addWidget(strategy_combo)
 
@@ -268,13 +268,12 @@ class QtWorkflowPropertiesMixin:
         retry_max_spin.setDecimals(1)
         retry_max_spin.setValue(ec.retry_policy.max_delay if ec and ec.retry_policy else 30.0)
 
-        exhausted_labels = [t(f"error_config.{key}") for key, _ in self._EXHAUSTED_OPTIONS]
-        exhausted_combo = themed_combobox(None, items=exhausted_labels)
+        exhausted_options = [(v, f"error_config.{k}") for k, v in self._EXHAUSTED_OPTIONS]
+        exhausted_combo = themed_dropdown(None, options=exhausted_options)
         if ec and ec.exhausted_strategy:
-            for i, (_, v) in enumerate(self._EXHAUSTED_OPTIONS):
-                if v == ec.exhausted_strategy:
-                    exhausted_combo.setCurrentIndex(i)
-                    break
+            idx = exhausted_combo.findData(ec.exhausted_strategy)
+            if idx >= 0:
+                exhausted_combo.setCurrentIndex(idx)
 
         fallback_edit = themed_entry(
             None,
@@ -297,7 +296,7 @@ class QtWorkflowPropertiesMixin:
 
         def _refresh_detail(*_):
             self._clear_layout(detail_layout)
-            selected_strategy = self._STRATEGY_OPTIONS[strategy_combo.currentIndex()][1]
+            selected_strategy = strategy_combo.currentData()
 
             if selected_strategy == ErrorStrategy.RETRY:
                 retry_retries_spin.setParent(detail_widget)
@@ -335,12 +334,12 @@ class QtWorkflowPropertiesMixin:
         self, node_id, combo, retry_retries_spin, retry_base_spin,
         retry_max_spin, exhausted_combo, fallback_edit,
     ):
-        selected_strategy = self._STRATEGY_OPTIONS[combo.currentIndex()][1]
+        selected_strategy = combo.currentData()
 
         if selected_strategy is None:
             new_ec = None
         elif selected_strategy == ErrorStrategy.RETRY:
-            ex_strategy = self._EXHAUSTED_OPTIONS[exhausted_combo.currentIndex()][1]
+            ex_strategy = exhausted_combo.currentData()
             new_ec = ErrorConfig(
                 strategy=ErrorStrategy.RETRY,
                 retry_policy=RetryPolicy(
@@ -433,9 +432,13 @@ class QtWorkflowPropertiesMixin:
         label_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
         s_layout.addWidget(label_label)
 
-        label_combo = themed_combobox(None, items=[
-            EdgeLabel.DEFAULT, EdgeLabel.TRUE, EdgeLabel.FALSE,
-            EdgeLabel.TIMEOUT, EdgeLabel.LOOP, EdgeLabel.EXIT,
+        label_combo = themed_dropdown(None, options=[
+            (EdgeLabel.DEFAULT, EdgeLabel.DEFAULT),
+            (EdgeLabel.TRUE, EdgeLabel.TRUE),
+            (EdgeLabel.FALSE, EdgeLabel.FALSE),
+            (EdgeLabel.TIMEOUT, EdgeLabel.TIMEOUT),
+            (EdgeLabel.LOOP, EdgeLabel.LOOP),
+            (EdgeLabel.EXIT, EdgeLabel.EXIT),
         ])
         label_combo.setCurrentText(edge.label)
         s_layout.addWidget(label_combo)
