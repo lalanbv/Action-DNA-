@@ -20,6 +20,7 @@ from src.core.events.event_names import EventName
 from src.core.flow import FlowEdge, FlowGraph, FlowNode, NodeType
 from src.panel.controllers.base_controller import BaseController
 from src.panel.models.enums import EdgeLabel
+from src.utils.i18n import t
 
 
 class WorkflowController(BaseController):
@@ -244,7 +245,7 @@ class WorkflowController(BaseController):
         if self._executor.is_running:
             return
         if not self.model.graph.nodes:
-            raise ValueError("请先创建流程节点")
+            raise ValueError(t("panel.exc.create_flow_nodes_first"))
         self._executor.start(self.model.graph)
 
     # ── 执行器事件回调（特有）──────────────────────────────

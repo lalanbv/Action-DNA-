@@ -16,6 +16,8 @@ import importlib.util
 import logging
 import os
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ def _get_backend_from_config() -> str | None:
         if backend in ("qt", "tk"):
             return backend
     except Exception:
-        logger.debug("无法从配置文件读取 GUI 后端设置，使用默认值")
+        logger.debug(t("panel.log.gui_backend_config_read_failed"))
     return None
 
 

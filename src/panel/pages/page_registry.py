@@ -106,7 +106,7 @@ class PageRegistry:
                 icon=icon,
                 category=category,
             )
-            logger.debug("注册页面: %s → %s:%s", page_id, module, page_class.__qualname__)
+            logger.debug(t("panel.log.register_page", page_id=page_id, module=module, class_name=page_class.__qualname__))
             return page_class
         return decorator
 

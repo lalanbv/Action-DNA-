@@ -60,7 +60,7 @@ class BaseController(ABC):
 
     def _require_idle(self) -> None:
         if self._executor.is_running:
-            raise RuntimeError("执行器运行中，无法修改")
+            raise RuntimeError(t("panel.exc.executor_running_no_modify"))
 
     # ── 监控器管理 ──────────────────────────────────────────
 

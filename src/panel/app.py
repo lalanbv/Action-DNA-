@@ -136,7 +136,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
             try:
                 importlib.import_module(mod_name)
             except Exception:  # pylint: disable=broad-exception-caught
-                logger.warning("延迟注册页面模块失败: %s", mod_name, exc_info=True)
+                logger.warning(t("panel.log.deferred_module_failed", mod_name=mod_name), exc_info=True)
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             list(pool.map(_safe_import, DEFERRED_PAGE_MODULES))
@@ -388,11 +388,11 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
 
             self._last_exec_running = is_running
         except tk.TclError:
-            logger.debug("监控轮询: 窗口已关闭")
+            logger.debug(t("panel.log.monitor_poll_window_closed"))
             self._stop_monitor_poll()
             return
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.warning("监控轮询异常", exc_info=True)
+            logger.warning(t("panel.log.monitor_poll_exception"), exc_info=True)
         poll_ms = getattr(self._cfg, "schedule", None)
         poll_ms = poll_ms.monitor_poll_ms if poll_ms else 500
         self._monitor_poll_id = self._timer.schedule(
@@ -537,7 +537,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
             from src.utils.restart import restart_app
             restart_app()
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception("重启失败，尝试恢复服务")
+            logger.exception(t("panel.log.restart_failed_recover"))
             from tkinter import messagebox
             messagebox.showerror(t("app.title"), t("settings.restart_failed"))
             self._services_ready = True

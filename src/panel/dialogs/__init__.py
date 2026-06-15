@@ -6,6 +6,7 @@
 from src.panel.dialogs.base_dialog import StepDialogBase
 from src.panel.dialogs.dialog_registry import DialogRegistry
 from src.panel.dialogs.key_picker import SyncedVar, make_key_picker
+from src.utils.i18n import t
 
 # 各类型对话框（导入即注册）
 from src.panel.dialogs.click_image_dialog import ClickImageDialog  # noqa: F401
@@ -49,5 +50,5 @@ def open_step_dialog(
     """工厂方法：根据 step.action_type 打开对应对话框。"""
     dlg_cls = DialogRegistry.get(step.action_type)
     if dlg_cls is None:
-        raise ValueError(f"未注册的 ActionType: {step.action_type}")
+        raise ValueError(t("panel.exc.unregistered_action_type", action_type=step.action_type))
     dlg_cls(parent, title=title, action=step, callback=on_done)

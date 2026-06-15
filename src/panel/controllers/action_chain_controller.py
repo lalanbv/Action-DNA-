@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from src.core.events.event_names import EventName
 from src.panel.controllers.base_controller import BaseController
+from src.utils.i18n import t
 
 
 class ActionChainController(BaseController):
@@ -52,7 +53,7 @@ class ActionChainController(BaseController):
             return
         steps = self.model.get_steps()
         if not steps:
-            raise ValueError("请先添加至少一个动作步骤")
+            raise ValueError(t("panel.exc.add_at_least_one_step"))
         self._executor.start(self.model.graph)
 
     # ── 配置文件（扩展）──────────────────────────────────────

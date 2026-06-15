@@ -23,6 +23,7 @@ from src.panel.qt_backend.dialogs.mouse_drag_dialog import QtMouseDragDialog
 from src.panel.qt_backend.dialogs.mouse_move_dialog import QtMouseMoveDialog
 from src.panel.qt_backend.dialogs.idle_behavior_dialog import QtIdleBehaviorDialog
 from src.panel.qt_backend.dialogs.start_timer_dialog import QtStartTimerDialog
+from src.utils.i18n import t
 
 # ── Qt 对话框注册表 ──
 
@@ -52,6 +53,6 @@ def open_step_dialog(parent, step, title: str, on_done) -> None:
     """根据 step.action_type 打开对应的 Qt 对话框。"""
     dlg_cls = _QT_DIALOG_MAP.get(step.action_type)
     if dlg_cls is None:
-        raise ValueError(f"未注册的 ActionType: {step.action_type}")
+        raise ValueError(t("panel.exc.unregistered_action_type", action_type=step.action_type))
     dlg = dlg_cls(parent, title=title, action=step, callback=on_done)
     dlg.open()

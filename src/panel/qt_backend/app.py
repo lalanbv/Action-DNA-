@@ -351,7 +351,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
                 self._stop_pulse()
             self._last_exec_running = is_running
         except Exception:
-            logger.warning("监控轮询异常", exc_info=True)
+            logger.warning(t("panel.log.monitor_poll_exception"), exc_info=True)
 
     def _pulse_running_indicator(self) -> None:
         if not self.executor or not self.executor.is_running:
@@ -490,7 +490,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             from src.utils.restart import restart_app
             restart_app()
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception("重启失败，尝试恢复服务")
+            logger.exception(t("panel.log.restart_failed_recover"))
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(None, t("app.title"), t("settings.restart_failed"))
             self._services_ready = True
@@ -547,5 +547,5 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             if self.matcher:
                 self.matcher.clear_cache()
         except Exception:
-            logger.warning("关闭清理异常", exc_info=True)
+            logger.warning(t("panel.log.close_cleanup_exception"), exc_info=True)
         event.accept()
