@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -166,3 +167,61 @@ def collect_used_keys(src_root: Path) -> tuple[set[str], set[str], list[LintFind
                 dynamic.append(LintFinding(
                     "dynamic", "", f"无法解析的 {fname}() 参数", f"{py}:{node.lineno}"))
     return used, prefixes, dynamic
+
+
+def _load_keys(path: Path) -> set[str]:
+    """加载 json 文件的 key 集合。失败返回空集。"""
+    try:
+        return set(json.loads(path.read_text(encoding="utf-8")).keys())
+    except (OSError, json.JSONDecodeError):
+        return set()
+
+
+def _is_plural_variant(key: str) -> bool:
+    """是否复数变体(.one/.other 后缀)。"""
+    return key.endswith(".one") or key.endswith(".other")
+
+
+def _plural_base(key: str) -> str:
+    """复数变体的 base key(剥离 .one/.other)。非变体返回原 key。"""
+    for suf in (".one", ".other"):
+        if key.endswith(suf):
+            return key[: -len(suf)]
+    return key
+
+
+def lint_i18n(src_root: Path, translations_dir: Path) -> LintReport:
+    """扫描 src_root + 对比 translations/{zh,en}.json,生成 LintReport。
+
+    mismatch 复数感知:en 的 ``.one``/``.other`` 变体若 base key 在 zh 存在,
+    视为预期复数不对称,不报为 mismatch。
+    """
+    used, prefixes, dynamic = collect_used_keys(src_root)
+    zh_keys = _load_keys(translations_dir / "zh.json")
+    en_keys = _load_keys(translations_dir / "en.json")
+
+    def covered_by_prefix(key: str) -> bool:
+        return any(key.startswith(p) for p in prefixes)
+
+    missing = [LintFinding("missing", k, "代码使用但 zh.json 缺失")
+               for k in sorted(used - zh_keys)]
+
+    # 复数感知 mismatch:跳过 .one/.other 变体或其 base 的不对称。
+    # 约定:en 用 ``key.one``/``key.other``,zh 用 base ``key``。
+    # 双向豁免:变体本身(其 base 在另一语言)或 base 本身(其变体在另一语言)。
+    mismatch: list[LintFinding] = []
+    for k in sorted(zh_keys ^ en_keys):
+        if _is_plural_variant(k):
+            base = _plural_base(k)
+            other = en_keys if k in zh_keys else zh_keys
+            if base in other:
+                continue  # 复数变体,base 在另一边 → 预期不对称
+        else:
+            other = en_keys if k in zh_keys else zh_keys
+            if f"{k}.one" in other or f"{k}.other" in other:
+                continue  # base key,复数变体在另一边 → 预期不对称
+        mismatch.append(LintFinding("mismatch", k, "zh/en 不对齐"))
+
+    redundant = [LintFinding("redundant", k, "json 有但代码未引用(疑似)")
+                 for k in sorted(zh_keys - used) if not covered_by_prefix(k)]
+    return LintReport(missing, mismatch, redundant, dynamic)
