@@ -14,6 +14,7 @@ import numpy as np
 from src.core.vision.ocr_result import OCRMultiResult
 from src.core.vision.pixel_result import PixelSearchResult
 from src.utils.float_utils import is_one
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ class TemplateMatchStep(VisionStep):
     def execute(self, screenshot: np.ndarray, context: dict) -> dict:
         matcher = context.get("_matcher")
         if matcher is None:
-            logger.warning("VisionPipeline 上下文缺少 _matcher，使用模块级懒加载实例")
+            logger.warning(t("vision.log.context_missing_matcher"))
             matcher = _get_default_matcher()
 
         # 多模板:任一命中即视为找到(向后兼容:无 alt 时走单模板/多尺度原路径)
@@ -520,7 +521,7 @@ class VisionPipeline:
 
             except Exception as e:
                 elapsed_ms = (time.monotonic() - t0) * 1000
-                logger.error("管线步骤 '%s' 执行失败 (%.1fms): %s", step.name, elapsed_ms, e)
+                logger.error(t("vision.log.step_exec_failed", name=step.name, elapsed=f"{elapsed_ms:.1f}", error=e))
                 if self._on_stage_error:
                     self._on_stage_error(step.name, e)
                 if self._stop_on_failure:

@@ -7,6 +7,7 @@ from typing import Any, TYPE_CHECKING
 
 from src.core.variables.types import VariableType
 from src.core.variables.scope import VariableScope
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.variables.pool import VariablePool
@@ -59,7 +60,7 @@ class TypedVariable:
 
         if self._reference_name in _visited:
             chain = " -> ".join((*_visited, self._reference_name))
-            raise ValueError(f"检测到循环引用: {chain}")
+            raise ValueError(t("variables.exc.circular_ref", chain=chain))
 
         visited = (*_visited, self._reference_name)
         value = pool.get(self._reference_name)

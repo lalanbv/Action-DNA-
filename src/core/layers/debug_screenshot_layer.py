@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from src.core.engine.priority import SystemPriority
 from src.core.layers.layer import ErrorContext, GraphLayer
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -82,12 +83,12 @@ class DebugScreenshotLayer(GraphLayer):
             ts = time.strftime("%Y%m%d_%H%M%S")
             ss_path = os.path.join(self._log_dir, f"debug_screen_{ts}.png")
             cv2.imencode('.png', screen)[1].tofile(ss_path)
-            logger.info("调试截图已保存: %s", ss_path)
+            logger.info(t("layers.log.debug_shot_saved", path=ss_path))
 
             if os.path.exists(template_path):
                 tpl_name = os.path.basename(template_path)
                 tpl_debug = os.path.join(self._log_dir, f"debug_template_{tpl_name}")
                 shutil.copy2(template_path, tpl_debug)
-                logger.info("调试模板已保存: %s", tpl_debug)
+                logger.info(t("layers.log.debug_template_saved", path=tpl_debug))
         except Exception as e:
-            logger.warning("保存调试截图失败: %s", e)
+            logger.warning(t("layers.log.debug_shot_save_failed", error=e))

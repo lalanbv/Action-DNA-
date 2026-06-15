@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.priority import SystemPriority
 from src.core.fail_safe import FailSafeMonitor, FailSafeTriggered
 from src.core.layers.layer import GraphLayer
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -47,5 +48,5 @@ class FailSafeLayer(GraphLayer):
         except FailSafeTriggered:
             raise
         except Exception:
-            logger.warning("FailSafe 检查时发生异常（非致命）", exc_info=True)
+            logger.warning(t("layers.log.failsafe_check_exception"), exc_info=True)
         return ctx

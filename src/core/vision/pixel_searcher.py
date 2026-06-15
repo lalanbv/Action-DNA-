@@ -7,6 +7,7 @@ import numpy as np
 from src.core.vision._cv2_guard import cv2, require_cv2
 from src.core.vision.pixel_result import PixelSearchResult
 from src.utils.float_utils import is_zero
+from src.utils.i18n import t
 logger = logging.getLogger(__name__)
 
 
@@ -161,7 +162,7 @@ class PixelSearcher:
             PixelSearchResult
         """
         if color_name not in self._color_presets:
-            logger.warning("未知颜色预设: '%s'", color_name)
+            logger.warning(t("vision.log.unknown_color_preset", name=color_name))
             return PixelSearchResult.not_found()
 
         search_area, offset = self._crop_region(screenshot, region)

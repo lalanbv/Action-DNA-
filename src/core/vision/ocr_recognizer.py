@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 import numpy as np
 
 from src.core.vision.ocr_result import OCRResult, OCRMultiResult
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,9 @@ class OCRRecognizer:
                 return
             try:
                 self._engine = RapidOCR()
-                logger.info("OCR 引擎初始化成功 (rapidocr-onnxruntime)")
+                logger.info(t("vision.log.ocr_init_ok"))
             except Exception as e:
-                logger.error("OCR 引擎初始化失败: %s", e)
+                logger.error(t("vision.log.ocr_init_failed", error=e))
             finally:
                 self._initialized = True
 
@@ -109,7 +110,7 @@ class OCRRecognizer:
         try:
             results, _ = self._engine(image)
         except Exception as e:
-            logger.error("OCR 识别失败: %s", e)
+            logger.error(t("vision.log.ocr_recognize_failed", error=e))
             return OCRMultiResult.empty()
 
         if results is None:
@@ -147,7 +148,7 @@ class OCRRecognizer:
         """使用预定义 ROI 进行 OCR。"""
         region = self._roi_presets.get(roi_name)
         if region is None:
-            logger.warning("未注册的 ROI: '%s'", roi_name)
+            logger.warning(t("vision.log.unregistered_roi", name=roi_name))
             return OCRMultiResult.empty()
         return self.recognize(screenshot, region)
 

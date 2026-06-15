@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from src.core.variables.types import VariableType
 from src.core.variables.scope import VariableScope
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class VariablePool:
         """
         with self._lock:
             if name in self._scopes[scope]:
-                logger.warning("变量 '%s' 在 %s 作用域已存在，覆盖", name, scope.value)
+                logger.warning(t("variables.log.exists_overwrite", name=name, scope=scope.value))
 
             value = initial_value if initial_value is not None else var_type.default_value
 
@@ -89,7 +90,7 @@ class VariablePool:
                 )
 
             self._scopes[scope][name] = _VarEntry(var_type=var_type, scope=scope, value=value)
-            logger.debug("声明变量: %s [%s] = %r (%s)", name, var_type.value, value, scope.value)
+            logger.debug(t("variables.log.declared", name=name, var_type=var_type.value, value=value, scope=scope.value))
 
     def get(self, name: str, scope: VariableScope | None = None) -> Any:
         """
@@ -112,7 +113,7 @@ class VariablePool:
             if scope is not None:
                 if name in self._scopes[scope]:
                     return self._scopes[scope][name].value
-                raise KeyError(f"变量 '{name}' 在 {scope.value} 作用域中不存在")
+                raise KeyError(t("variables.exc.not_exists", name=name, scope=scope.value))
 
             for s in (VariableScope.STEP, VariableScope.NODE, VariableScope.GLOBAL):
                 if name in self._scopes[s]:
@@ -142,7 +143,7 @@ class VariablePool:
         """
         with self._lock:
             if name not in self._scopes[scope]:
-                logger.debug("变量 '%s' 未声明，自动创建", name)
+                logger.debug(t("variables.log.undeclared_autocreate", name=name))
                 var_type = self._infer_type(value)
                 self.declare(name, var_type, scope, value)
                 return
@@ -163,7 +164,7 @@ class VariablePool:
                 var_type=entry.var_type, scope=scope, value=value
             )
             callbacks_snapshot = list(self._change_callbacks)
-            logger.debug("设置变量: %s = %r -> %r (%s)", name, old_value, value, scope.value)
+            logger.debug(t("variables.log.set_value", name=name, old_value=old_value, new_value=value, scope=scope.value))
 
         self._fire_change_unlocked(callbacks_snapshot, name, old_value, value, scope)
 
@@ -204,7 +205,7 @@ class VariablePool:
         """进入新作用域"""
         with self._lock:
             self._scope_stack.append(scope)
-            logger.debug("进入作用域: %s (栈深度: %d)", scope.value, len(self._scope_stack))
+            logger.debug(t("variables.log.enter_scope", scope=scope.value, depth=len(self._scope_stack)))
 
     def pop_scope(self, scope: VariableScope) -> None:
         """退出作用域，清除该作用域下所有变量"""
@@ -219,7 +220,7 @@ class VariablePool:
                         self._scope_stack[-1].value,
                         scope.value,
                     )
-            logger.debug("退出作用域: %s", scope.value)
+            logger.debug(t("variables.log.exit_scope", scope=scope.value))
 
     # ---- 模板解析 ----
 
@@ -254,7 +255,7 @@ class VariablePool:
             var_name = match.group(1)
             if var_name in values:
                 return str(values[var_name])
-            logger.warning("模板引用的变量 '%s' 不存在", var_name)
+            logger.warning(t("variables.log.template_ref_missing", name=var_name))
             return match.group(0)
 
         return self.TEMPLATE_PATTERN.sub(replacer, template)
@@ -384,7 +385,7 @@ class VariablePool:
         """解析内置变量"""
         if name in self._builtin_resolvers:
             return self._builtin_resolvers[name]()
-        raise KeyError(f"未知的内置变量: '{name}'")
+        raise KeyError(t("variables.exc.unknown_builtin", name=name))
 
     def _fire_change_unlocked(
         self, callbacks: list[Callable[[str, Any, Any, VariableScope], None]],
@@ -395,7 +396,7 @@ class VariablePool:
             try:
                 callback(name, old_value, new_value, scope)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("变量变更回调出错: %s", e)
+                logger.error(t("variables.log.callback_error", error=e))
 
     def _infer_type(self, value: Any) -> VariableType:
         """从值推断变量类型。bool 必须在 int 之前检查。
@@ -416,10 +417,10 @@ class VariablePool:
                 return VariableType.COORD
             if len(value) == 4 and all(isinstance(v, int) and not isinstance(v, bool) for v in value):
                 return VariableType.COORD_RECT
-            raise TypeError(f"无法推断 tuple 值的类型: {value!r}，仅支持长度 2 (COORD) 或 4 (COORD_RECT) 的 int tuple")
+            raise TypeError(t("variables.exc.tuple_type_infer_failed", value=value))
         if isinstance(value, list):
             return VariableType.LIST
-        raise TypeError(f"无法推断值 {value!r} 的变量类型")
+        raise TypeError(t("variables.exc.type_infer_failed", value=value))
 
     def _all_names(self) -> set[str]:  # type: ignore[valid-type]
         """获取所有作用域中的变量名"""

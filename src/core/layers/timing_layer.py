@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.execution_context import ExecutionContext
 from src.core.engine.priority import SystemPriority
 from src.core.layers.layer import ErrorContext, GraphLayer
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.node_result import NodeResult
@@ -109,7 +110,7 @@ class TimingLayer(GraphLayer):
         if not self._report_on_exit:
             return
 
-        logger.info("========== 执行性能报告 ==========")
+        logger.info(t("layers.log.perf_report_header"))
         for node_type, stats in sorted(self._stats.items()):
             if stats.call_count == 0:
                 continue

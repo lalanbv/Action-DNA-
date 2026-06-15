@@ -12,6 +12,7 @@ import numpy as np
 from mss.base import MSSBase
 
 from src.core.vision._cv2_guard import cv2, require_cv2
+from src.utils.i18n import t
 
 __all__ = ["BufferPool", "DoubleBufferPool"]
 
@@ -50,7 +51,7 @@ class DoubleBufferPool:
             h, w = shot.size[1], shot.size[0]
             self._ensure(h, w)
             if self._write_bgra is None or self._write_bgr is None:
-                raise RuntimeError("DoubleBufferPool 缓冲区未初始化")
+                raise RuntimeError(t("vision.exc.double_buffer_uninitialized"))
             raw = np.frombuffer(shot.bgra, dtype=np.uint8).reshape(h, w, 4)
             np.copyto(self._write_bgra[:h, :w], raw)
             cv2.cvtColor(
@@ -105,7 +106,7 @@ class BufferPool:
             h, w = shot.size[1], shot.size[0]
             self._ensure(h, w)
             if self._bgra is None or self._bgr is None:
-                raise RuntimeError("BufferPool 缓冲区未初始化")
+                raise RuntimeError(t("vision.exc.buffer_uninitialized"))
             raw = np.frombuffer(shot.bgra, dtype=np.uint8).reshape(h, w, 4)
             np.copyto(self._bgra[:h, :w], raw)
             cv2.cvtColor(self._bgra[:h, :w], cv2.COLOR_BGRA2BGR, dst=self._bgr[:h, :w])

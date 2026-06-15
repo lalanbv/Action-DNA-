@@ -20,6 +20,7 @@ from src.core.debug.debugger import Debugger
 from src.core.engine.priority import SystemPriority
 from src.core.layers.layer import ErrorContext, GraphLayer
 from src.core.safe_eval import build_eval_context, safe_eval
+from src.utils.i18n import t
 from src.utils.paths import get_logs_dir
 
 if TYPE_CHECKING:
@@ -84,7 +85,7 @@ class BreakpointLayer(GraphLayer):
                 mode = DebugMode(mode)
             except ValueError:
                 valid = ", ".join(m.value for m in DebugMode)
-                raise ValueError(f"无效的调试模式: {mode}, 有效值: {valid}") from None
+                raise ValueError(t("layers.exc.invalid_debug_mode", mode=mode, valid=valid)) from None
         with self._lock:
             self._debug_mode = mode
 
@@ -177,7 +178,7 @@ class BreakpointLayer(GraphLayer):
 
     def remove_breakpoint(self, node_id: str) -> None:
         self._debugger.breakpoints.remove_breakpoint(node_id)
-        logger.info("移除断点: %s", node_id)
+        logger.info(t("layers.log.breakpoint_removed", node_id=node_id))
 
     def clear_breakpoints(self) -> None:
         self._debugger.breakpoints.clear_all()
@@ -224,12 +225,12 @@ class BreakpointLayer(GraphLayer):
         self._resume_event.clear()
         while not self._resume_event.wait(timeout=0.2):
             if ctx.is_stopping:
-                raise StopExecution("执行被请求停止")
+                raise StopExecution(t("layers.exc.execution_stop_requested"))
 
         with self._lock:
             mode = self._debug_mode
         if mode == DebugMode.STOP:
-            raise StopExecution("调试模式：用户请求停止")
+            raise StopExecution(t("layers.exc.debug_mode_user_stop"))
 
     def _evaluate_condition(
         self,
@@ -257,6 +258,6 @@ class BreakpointLayer(GraphLayer):
             screenshot = ctx.capture.grab()
             cv2.imwrite(filepath, screenshot)
 
-            logger.debug("断点截图已保存: %s", filepath)
+            logger.debug(t("layers.log.breakpoint_shot_saved", path=filepath))
         except Exception as e:
-            logger.debug("保存断点截图失败: %s", e)
+            logger.debug(t("layers.log.breakpoint_shot_save_failed", error=e))
