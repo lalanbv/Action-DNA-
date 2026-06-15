@@ -37,3 +37,37 @@ def test_qt_editor_state_roundtrip():
     assert alt_thresholds[1] is None
     assert mode == ThresholdMode.PER_TEMPLATE
     assert strategy == MatchStrategy.BEST_CONFIDENCE
+
+
+def test_qt_editor_strategy_first_match_roundtrip():
+    """strategy=FIRST_MATCH 也能正确 roundtrip（覆盖非默认值，防 _on_mode_changed 污染）。"""
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from src.panel.qt_backend.dialogs.multi_template_editor import MultiTemplateEditorQt
+    from src.core.action import MatchStrategy, ThresholdMode
+
+    editor = MultiTemplateEditorQt(parent=None)
+    editor.set_state(
+        "a.png", [], [],
+        ThresholdMode.PER_TEMPLATE, MatchStrategy.FIRST_MATCH, 0.8,
+    )
+    _, _, _, _, strategy, _ = editor.get_state()
+    assert strategy == MatchStrategy.FIRST_MATCH
+
+
+def test_qt_editor_strategy_persists_after_mode_change():
+    """set_state 后手动改 mode combo，strategy 仍取自 strategy combo（非污染）。"""
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from src.panel.qt_backend.dialogs.multi_template_editor import MultiTemplateEditorQt
+    from src.core.action import MatchStrategy, ThresholdMode
+
+    editor = MultiTemplateEditorQt(parent=None)
+    editor.set_state(
+        "a.png", [], [],
+        ThresholdMode.PER_TEMPLATE, MatchStrategy.BEST_CONFIDENCE, 0.8,
+    )
+    # 用户改 mode combo（应只影响 mode，strategy 来自 strategy combo）
+    editor._mode_cb.setCurrentIndex(editor._mode_cb.findData(ThresholdMode.AUTO))
+    _, _, _, _, strategy, _ = editor.get_state()
+    assert strategy == MatchStrategy.BEST_CONFIDENCE

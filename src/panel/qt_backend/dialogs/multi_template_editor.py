@@ -238,8 +238,18 @@ class MultiTemplateEditorQt(QWidget):
         self._strategy = strategy
         self._global_threshold = global_threshold
         if self._show_match_settings:
-            self._mode_cb.setCurrentIndex(self._mode_cb.findData(mode))
-            self._strategy_cb.setCurrentIndex(self._strategy_cb.findData(strategy))
+            # 程序化设置 combo 时 blockSignals，防止 setCurrentIndex 中途触发
+            # _on_mode_changed 用尚未更新的另一 combo 覆盖实例变量
+            # （根因：原 mode combo 在 strategy combo 之前 setCurrentIndex，
+            #  mode 变更触发 _on_mode_changed 用默认 strategy combo 污染 _strategy）
+            for cb in (self._mode_cb, self._strategy_cb):
+                cb.blockSignals(True)
+            try:
+                self._mode_cb.setCurrentIndex(self._mode_cb.findData(mode))
+                self._strategy_cb.setCurrentIndex(self._strategy_cb.findData(strategy))
+            finally:
+                for cb in (self._mode_cb, self._strategy_cb):
+                    cb.blockSignals(False)
             self._global_thr_sb.setValue(global_threshold)
         self._render_rows()
 
