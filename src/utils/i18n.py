@@ -113,6 +113,25 @@ def all_keys() -> set[str]:
         return set(_translations) | set(_fallback_translations)
 
 
+def get_available_languages() -> list[str]:
+    """返回 translations/ 目录下所有可用语言代码(如 ['en', 'zh']),排序去重。
+
+    供设置页动态渲染语言下拉框。
+    """
+    if IS_FROZEN:
+        base = os.path.join(getattr(sys, "_MEIPASS", ""), "src", "utils", "translations")
+    else:
+        base = os.path.join(os.path.dirname(__file__), "translations")
+    langs: set[str] = set()
+    try:
+        for entry in os.listdir(base):
+            if entry.endswith(".json"):
+                langs.add(entry[:-5])
+    except OSError:
+        pass
+    return sorted(langs)
+
+
 def refresh() -> None:
     """清除缓存并重新加载当前语言（用于热重载翻译文件）。"""
     with _lock:

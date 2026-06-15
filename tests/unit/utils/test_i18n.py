@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.utils.i18n import (
+    get_available_languages,
     get_language,
     has_key,
     init,
@@ -185,3 +186,15 @@ class TestFormatError:
     def test_successful_format_unchanged(self) -> None:
         init("zh")
         assert "test" in t("workflow.msg.profile_loaded", name="test")
+
+
+class TestAvailableLanguages:
+    def test_returns_sorted_language_codes(self) -> None:
+        langs = get_available_languages()
+        assert isinstance(langs, list)
+        assert "zh" in langs and "en" in langs
+        assert langs == sorted(langs)  # 排序
+
+    def test_only_json_files(self) -> None:
+        langs = get_available_languages()
+        assert all("." not in lang for lang in langs)  # 无扩展名残留
