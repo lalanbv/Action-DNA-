@@ -132,6 +132,29 @@ def get_available_languages() -> list[str]:
     return sorted(langs)
 
 
+def detect_system_locale() -> str:
+    """检测系统首选语言,映射到支持的 i18n 语言码。
+
+    映射规则:``zh* → zh, en* → en, 其他 → zh(默认)``。检测失败返回 ``'zh'``。
+    供 init() 首次启动且 settings 未指定语言时使用。
+    """
+    try:
+        import locale
+        loc = locale.getlocale()[0]
+        if not loc:
+            # getdefaultlocale 在 3.11 起弃用(3.15 移除),作为 getlocale 返回空时的 fallback
+            loc = locale.getdefaultlocale()[0]  # noqa: DEPRECATED
+        if loc:
+            low = loc.lower()
+            if low.startswith("zh"):
+                return "zh"
+            if low.startswith("en"):
+                return "en"
+    except Exception:
+        pass
+    return "zh"
+
+
 def refresh() -> None:
     """清除缓存并重新加载当前语言（用于热重载翻译文件）。"""
     with _lock:

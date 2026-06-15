@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.utils.i18n import (
+    detect_system_locale,
     get_available_languages,
     get_language,
     has_key,
@@ -198,3 +199,31 @@ class TestAvailableLanguages:
     def test_only_json_files(self) -> None:
         langs = get_available_languages()
         assert all("." not in lang for lang in langs)  # 无扩展名残留
+
+
+class TestDetectLocale:
+    def test_zh_mapping(self, monkeypatch) -> None:
+        import locale as _locale
+        monkeypatch.setattr(_locale, "getlocale", lambda: ("zh_CN.UTF-8", "UTF-8"))
+        monkeypatch.setattr(_locale, "getdefaultlocale", lambda: ("zh_CN", "UTF-8"))
+        assert detect_system_locale() == "zh"
+
+    def test_en_mapping(self, monkeypatch) -> None:
+        import locale as _locale
+        monkeypatch.setattr(_locale, "getlocale", lambda: ("en_US", "UTF-8"))
+        monkeypatch.setattr(_locale, "getdefaultlocale", lambda: ("en_US", None))
+        assert detect_system_locale() == "en"
+
+    def test_unknown_falls_back_to_zh(self, monkeypatch) -> None:
+        import locale as _locale
+        monkeypatch.setattr(_locale, "getlocale", lambda: ("ja_JP", None))
+        monkeypatch.setattr(_locale, "getdefaultlocale", lambda: ("ja_JP", None))
+        assert detect_system_locale() == "zh"
+
+    def test_detection_failure_returns_default(self, monkeypatch) -> None:
+        import locale as _locale
+        def boom():
+            raise RuntimeError("no locale")
+        monkeypatch.setattr(_locale, "getlocale", boom)
+        monkeypatch.setattr(_locale, "getdefaultlocale", boom)
+        assert detect_system_locale() == "zh"
