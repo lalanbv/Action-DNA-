@@ -57,16 +57,16 @@ class PressKeyDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("PRESS_KEY 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="PRESS_KEY"))
 
         if not isinstance(action, PressKeyStep):
             return NodeResult.fail(
-                f"PRESS_KEY 节点配置类型错误，期望 PressKeyStep，实际: {type(action).__name__}",
+                t("engine.node_fail.step_config_type_error", node_type="PRESS_KEY", expected_type="PressKeyStep", actual_type=type(action).__name__),
             )
 
         key = action.key
         if not key:
-            return NodeResult.fail("PRESS_KEY 节点未指定按键")
+            return NodeResult.fail(t("engine.node_fail.press_key_no_key"))
 
         if key.startswith("mouse_"):
             button = key.removeprefix("mouse_")

@@ -124,10 +124,10 @@ class ClickImageDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult | ExecutionBlocker:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("CLICK_IMAGE 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="CLICK_IMAGE"))
 
         if not isinstance(action, ClickImageStep):
-            return NodeResult.fail(f"CLICK_IMAGE 节点步骤类型错误: {type(action).__name__}")
+            return NodeResult.fail(t("engine.node_fail.click_image_step_type_error", type_name=type(action).__name__))
 
         params = _ClickParams(
             found_action=action.found_action,
@@ -153,7 +153,7 @@ class ClickImageDescriptor(NodeDescriptor):
             return self._handle_not_found(action.detect_mode, action.image_path)
 
         if ctx.stop_event.is_set():
-            return NodeResult.fail("收到停止信号，匹配成功后中断执行")
+            return NodeResult.fail(t("engine.node_fail.stop_signal_match_interrupt"))
 
         return self._execute_found_action(ctx, match_rect, params)
 
@@ -278,13 +278,13 @@ class ClickImageDescriptor(NodeDescriptor):
                     basename, self._MAX_WAIT_SECONDS, check_count, miss_count, error_count,
                 )
                 return NodeResult.fail(
-                    f"WAIT_UNTIL_FOUND 超时 ({self._MAX_WAIT_SECONDS:.0f}s): {action.image_path}",
+                    t("engine.node_fail.wait_until_found_timeout", max_seconds=self._MAX_WAIT_SECONDS, image_path=action.image_path),
                 )
 
             if ctx.pause_event.is_set():
                 ctx.stop_event.wait(timeout=0.1)
                 if ctx.stop_event.is_set():
-                    return NodeResult.fail("收到停止信号，等待模板匹配中断")
+                    return NodeResult.fail(t("engine.node_fail.stop_signal_template_wait_interrupt"))
                 continue
 
             check_count += 1
@@ -303,7 +303,7 @@ class ClickImageDescriptor(NodeDescriptor):
                     basename, check_count, elapsed, result.rect[0], result.rect[1],
                 )
                 if ctx.stop_event.is_set():
-                    return NodeResult.fail("收到停止信号，匹配成功后中断执行")
+                    return NodeResult.fail(t("engine.node_fail.stop_signal_match_interrupt"))
                 return self._execute_found_action(ctx, result.rect, params)
 
             miss_count += 1
@@ -317,7 +317,7 @@ class ClickImageDescriptor(NodeDescriptor):
             wait = random.uniform(action.retry_wait_min, action.retry_wait_max)
             ctx.stop_event.wait(timeout=wait)
 
-        return NodeResult.fail("收到停止信号，等待模板匹配中断")
+        return NodeResult.fail(t("engine.node_fail.stop_signal_template_wait_interrupt"))
 
     def _handle_not_found(
         self,
@@ -327,7 +327,7 @@ class ClickImageDescriptor(NodeDescriptor):
         """处理未找到模板的情况。"""
         match detect_mode:
             case DetectMode.FAIL_IF_NOT_FOUND:
-                return NodeResult.fail(f"模板匹配失败: {template_path}")
+                return NodeResult.fail(t("engine.node_fail.template_match_failed", template_path=template_path))
             case DetectMode.SKIP_IF_NOT_FOUND:
                 return ExecutionBlocker(reason=f"未找到模板: {template_path}")
             case _:
@@ -363,7 +363,7 @@ class ClickImageDescriptor(NodeDescriptor):
 
         for attempt in range(self._ACTION_RETRIES):
             if ctx.stop_event.is_set():
-                return NodeResult.fail("收到停止信号，动作执行中断")
+                return NodeResult.fail(t("engine.node_fail.stop_signal_action_interrupt"))
             try:
                 self._perform_action(ctx, params, target_x, target_y, clamp)
                 break
@@ -384,7 +384,7 @@ class ClickImageDescriptor(NodeDescriptor):
                         params.found_action.value, target_x, target_y, exc,
                     )
                     return NodeResult.fail(
-                        f"检测成功但动作执行失败 ({self._ACTION_RETRIES}次): {exc}",
+                        t("engine.node_fail.action_exec_failed", retry_count=self._ACTION_RETRIES, error=exc),
                     )
 
         output_vars: dict[str, Any] = {

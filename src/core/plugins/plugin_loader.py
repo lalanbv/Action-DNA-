@@ -686,14 +686,14 @@ class PluginLoader:
         """验证清单完整性。"""
         errors: list[str] = []
         if not meta.plugin_id:
-            errors.append("plugin_id 不能为空")
+            errors.append(t("plugins.validation.plugin_id_empty"))
         if not meta.plugin_name:
-            errors.append("plugin_name 不能为空")
+            errors.append(t("plugins.validation.plugin_name_empty"))
         if not meta.version:
-            errors.append("version 不能为空")
+            errors.append(t("plugins.validation.version_empty"))
         parts = meta.version.split(".")
         if len(parts) != 3 or not all(p.isdigit() for p in parts):
-            errors.append(f"version 格式无效: '{meta.version}'，应为 X.Y.Z")
+            errors.append(t("plugins.validation.version_format_invalid", version=meta.version))
         valid_permissions = {
             "screen_capture",
             "template_matcher",
@@ -703,7 +703,7 @@ class PluginLoader:
             "file_write",
             "network",
         }
-        errors.extend(f"未知权限: '{perm}'" for perm in meta.permissions if perm not in valid_permissions)
+        errors.extend(t("plugins.validation.unknown_permission", permission=perm) for perm in meta.permissions if perm not in valid_permissions)
         return errors
 
     def _check_version_compat(self, meta: PluginMetadata) -> bool:

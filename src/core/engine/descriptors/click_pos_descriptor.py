@@ -13,6 +13,7 @@ from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
 from src.core.step_types import ClickPosStep
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -59,11 +60,11 @@ class ClickPosDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("CLICK_POS 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="CLICK_POS"))
 
         if not isinstance(action, ClickPosStep):
             return NodeResult.fail(
-                f"CLICK_POS 节点配置类型错误，期望 ClickPosStep，实际: {type(action).__name__}",
+                t("engine.node_fail.step_config_type_error", node_type="CLICK_POS", expected_type="ClickPosStep", actual_type=type(action).__name__),
             )
 
         step: ClickPosStep = action
@@ -72,15 +73,14 @@ class ClickPosDescriptor(NodeDescriptor):
             coords = ctx.variables.get(step.coord_var_name)
             if coords is None:
                 return NodeResult.fail(
-                    f"坐标变量 '{step.coord_var_name}' 未定义",
+                    t("engine.node_fail.coord_var_undefined", coord_var_name=step.coord_var_name),
                 )
             if (
                 not isinstance(coords, (list, tuple))
                 or len(coords) < 2
             ):
                 return NodeResult.fail(
-                    f"坐标变量 '{step.coord_var_name}' 格式错误，"
-                    f"期望 [x, y]，实际: {coords!r}",
+                    t("engine.node_fail.coord_var_format_error", coord_var_name=step.coord_var_name, coords=coords),
                 )
             x, y = coords[0], coords[1]
             logger.info(

@@ -401,7 +401,7 @@ class GraphEngine:
 
         for attempt in range(max_attempts):
             if ctx.is_stopping:
-                return NodeResult.fail("收到停止信号，跳过执行")
+                return NodeResult.fail(t("engine.node_fail.stop_signal_skip"))
 
             descriptor = None
             try:

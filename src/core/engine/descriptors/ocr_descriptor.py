@@ -71,7 +71,7 @@ class OCRDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("OCR_CHECK 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="OCR_CHECK"))
 
         ocr_recognizer = ctx.extra.get("ocr_recognizer")
         if ocr_recognizer is None:

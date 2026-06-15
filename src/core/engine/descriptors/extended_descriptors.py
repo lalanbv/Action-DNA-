@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -70,7 +71,7 @@ class HoldKeyDescriptor(NodeDescriptor):
             return NodeResult.fail("executor not available")
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("HOLD_KEY 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="HOLD_KEY"))
         executor._do_hold_key(cast(HoldKeyStep, node.action), ctx.gen)
         return NodeResult.ok()
 
@@ -102,7 +103,7 @@ class MouseScrollDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult:
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("MOUSE_SCROLL 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="MOUSE_SCROLL"))
         ctx.input_ctrl.scroll(cast(MouseScrollStep, node.action).scroll_clicks)
         return NodeResult.ok()
 
@@ -143,7 +144,7 @@ class MouseMoveDescriptor(NodeDescriptor):
             return NodeResult.fail("executor not available")
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("MOUSE_MOVE 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="MOUSE_MOVE"))
         action = cast(MouseMoveStep, node.action)
         if action.path_points:
             ctx.input_ctrl.replay_path(
@@ -189,7 +190,7 @@ class MouseDragDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult:
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("MOUSE_DRAG 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="MOUSE_DRAG"))
         action = cast(MouseDragStep, node.action)
         ctx.input_ctrl.drag_to(
             action.start_x, action.start_y,
@@ -232,7 +233,7 @@ class KeyComboDescriptor(NodeDescriptor):
             return NodeResult.fail("executor not available")
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("KEY_COMBO 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="KEY_COMBO"))
         executor._do_key_combo(cast(KeyComboStep, node.action), ctx.gen)
         return NodeResult.ok()
 
@@ -271,7 +272,7 @@ class MultiKeySequenceDescriptor(NodeDescriptor):
             return NodeResult.fail("executor not available")
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("MULTI_KEY_SEQUENCE 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="MULTI_KEY_SEQUENCE"))
         executor._do_multi_key_sequence(cast(MultiKeySequenceStep, node.action), ctx.gen)
         return NodeResult.ok()
 
@@ -309,7 +310,7 @@ class IdleBehaviorDescriptor(NodeDescriptor):
             return NodeResult.fail("executor not available")
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("IDLE_BEHAVIOR 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="IDLE_BEHAVIOR"))
         executor._do_idle_behavior(cast(IdleBehaviorStep, node.action), ctx.gen)
         return NodeResult.ok()
 
@@ -347,6 +348,6 @@ class StartTimerDescriptor(NodeDescriptor):
             return NodeResult.fail("executor not available")
         node = ctx.current_node
         if node is None or node.action is None:
-            return NodeResult.fail("START_TIMER 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="START_TIMER"))
         executor._do_start_timer(cast(StartTimerStep, node.action))
         return NodeResult.ok()

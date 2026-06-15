@@ -20,6 +20,7 @@ from src.core.engine.node_result import NodeResult
 from src.core.plugins.plugin_context import PluginContext
 from src.core.plugins.plugin_interface import PluginInterface, PluginMetadata
 from src.core.plugins.plugin_node_registry import PluginNodeRegistry
+from src.utils.i18n import t
 
 
 # ── 节点描述符 ──────────────────────────────────────────────
@@ -68,7 +69,7 @@ class AutoPotionDescriptor(NodeDescriptor):
         threshold = getattr(action, "threshold", 0.8)
 
         if ctx.capture is None or ctx.matcher is None:
-            return NodeResult.fail("截图或匹配服务不可用")
+            return NodeResult.fail(t("engine.node_fail.screenshot_or_match_unavailable"))
 
         screenshot = ctx.capture.grab()
         rect = ctx.matcher.find(screenshot, template, threshold=threshold)

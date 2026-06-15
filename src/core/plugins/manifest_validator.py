@@ -66,7 +66,7 @@ def validate_manifest(
     # 必填字段检查
     missing = REQUIRED_FIELDS - set(manifest.keys())
     if missing:
-        errors.append(f"缺少必填字段: {missing}")
+        errors.append(t("plugins.validation.missing_required_fields", missing=missing))
         return errors
 
     # 版本格式检查
@@ -86,20 +86,20 @@ def validate_manifest(
                 min_ver = EngineVersion.parse(engine_min)
                 if current < min_ver:
                     errors.append(
-                        f"引擎版本不兼容: 插件要求 >= {min_ver}，当前 {current}"
+                        t("plugins.validation.engine_version_incompatible_min", min_ver=min_ver, current=current)
                     )
             if engine_max:
                 max_ver = EngineVersion.parse(engine_max)
                 if current > max_ver:
                     errors.append(
-                        f"引擎版本不兼容: 插件要求 <= {max_ver}，当前 {current}"
+                        t("plugins.validation.engine_version_incompatible_max", max_ver=max_ver, current=current)
                     )
         except ValueError as e:
-            errors.append(f"版本解析失败: {e}")
+            errors.append(t("plugins.validation.version_parse_failed", error=e))
 
     # permissions 类型检查
     permissions = manifest.get("permissions")
     if not isinstance(permissions, list):
-        errors.append("permissions 必须是列表")
+        errors.append(t("plugins.validation.permissions_not_list"))
 
     return errors

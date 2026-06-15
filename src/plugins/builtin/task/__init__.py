@@ -313,7 +313,7 @@ class DailyResetDescriptor(NodeDescriptor):
             if not (0 <= reset_h <= 23 and 0 <= reset_m <= 59):
                 raise ValueError(f"Time out of range: {reset_time_str}")
         except (ValueError, AttributeError) as e:
-            return NodeResult.fail(f"DailyReset 时间格式错误 {reset_time_str!r}: {e}")
+            return NodeResult.fail(t("engine.node_fail.daily_reset_time_format_error", reset_time_str=reset_time_str, error=e))
 
         now = datetime.now()
         minutes_since_midnight = now.hour * 60 + now.minute

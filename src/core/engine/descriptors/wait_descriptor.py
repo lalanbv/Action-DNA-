@@ -57,23 +57,23 @@ class WaitDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult | ExecutionBlocker:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("WAIT 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="WAIT"))
 
         if not isinstance(action, WaitStep):
-            return NodeResult.fail("WAIT 节点步骤类型不匹配")
+            return NodeResult.fail(t("engine.node_fail.step_type_mismatch", node_type="WAIT"))
 
         seconds = action.wait_seconds
         if not math.isfinite(seconds):
-            return NodeResult.fail(f"等待秒数无效: {seconds}")
+            return NodeResult.fail(t("engine.node_fail.wait_seconds_invalid", seconds=seconds))
         if seconds < 0:
-            return NodeResult.fail(f"等待秒数不能为负数: {seconds}")
+            return NodeResult.fail(t("engine.node_fail.wait_seconds_negative", seconds=seconds))
 
         if action.recorded_duration > 0:
             seconds = human_like_duration(action.recorded_duration)
 
         logger.info(t("engine.log.wait_fixed", seconds=seconds))
         if _interruptible_wait(ctx, seconds):
-            return NodeResult.fail("收到停止信号，等待中断")
+            return NodeResult.fail(t("engine.node_fail.stop_signal_wait_interrupt"))
 
         return NodeResult.ok()
 
@@ -108,30 +108,30 @@ class WaitRandomDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult | ExecutionBlocker:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("WAIT_RANDOM 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="WAIT_RANDOM"))
 
         if not isinstance(action, WaitRandomStep):
-            return NodeResult.fail("WAIT_RANDOM 节点步骤类型不匹配")
+            return NodeResult.fail(t("engine.node_fail.step_type_mismatch", node_type="WAIT_RANDOM"))
 
         wait_min = action.wait_min
         wait_max = action.wait_max
 
         if not (math.isfinite(wait_min) and math.isfinite(wait_max)):
             return NodeResult.fail(
-                f"等待范围无效: [{wait_min}, {wait_max}]",
+                t("engine.node_fail.wait_range_invalid", wait_min=wait_min, wait_max=wait_max),
             )
 
         if wait_min > wait_max:
             wait_min, wait_max = wait_max, wait_min
 
         if wait_max < 0:
-            return NodeResult.fail(f"等待范围不能为负数: [{wait_min}, {wait_max}]")
+            return NodeResult.fail(t("engine.node_fail.wait_range_negative", wait_min=wait_min, wait_max=wait_max))
 
         wait_min = max(0.0, wait_min)
         seconds = random.uniform(wait_min, wait_max)
         logger.info(t("engine.log.wait_random", seconds=seconds, wait_min=wait_min, wait_max=wait_max))
         if _interruptible_wait(ctx, seconds):
-            return NodeResult.fail("收到停止信号，随机等待中断")
+            return NodeResult.fail(t("engine.node_fail.stop_signal_random_wait_interrupt"))
 
         return NodeResult.ok()
 

@@ -77,11 +77,11 @@ class PixelSearchDescriptor(NodeDescriptor):
     def execute(self, ctx: ExecutionContext) -> NodeResult:
         action = ctx.current_node.action
         if action is None:
-            return NodeResult.fail("PIXEL_SEARCH 节点缺少步骤配置")
+            return NodeResult.fail(t("engine.node_fail.missing_step_config", node_type="PIXEL_SEARCH"))
 
         pixel_searcher = ctx.extra.get("pixel_searcher")
         if pixel_searcher is None:
-            return NodeResult.fail("PixelSearcher 未注入到 ExecutionContext.extra")
+            return NodeResult.fail(t("engine.node_fail.pixel_searcher_not_injected"))
 
         step = action  # type: PixelSearchStep  — 由 action_type() 约束
         screenshot = ctx.capture.grab()
@@ -98,7 +98,7 @@ class PixelSearchDescriptor(NodeDescriptor):
                 tolerance=step.color_tolerance, region=region,
             )
         else:
-            return NodeResult.fail("未指定目标颜色 (target_color) 或颜色预设 (color_preset)")
+            return NodeResult.fail(t("engine.node_fail.pixel_search_no_target"))
 
         output: dict[str, object] = {
             "found": result.found,

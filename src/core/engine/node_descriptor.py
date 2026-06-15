@@ -94,7 +94,7 @@ class NodeDescriptor(ABC):
             if port.required:
                 value = getattr(action, name, _MISSING)
                 if value is _MISSING or value is None:
-                    errors.append(f"必需参数 '{name}' ({port.description}) 缺失")
+                    errors.append(t("plugins.validation.required_param_missing", param_name=name, description=port.description))
         return errors
 
     # ---- UI 构建 ----

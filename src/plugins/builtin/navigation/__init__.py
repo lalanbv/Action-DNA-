@@ -278,7 +278,7 @@ class TeleportDescriptor(NodeDescriptor):
             screenshot, action.map_template, threshold=0.8,
         )
         if match_rect is None:
-            return NodeResult.fail(f"未找到传送点: {action.map_template}")
+            return NodeResult.fail(t("engine.node_fail.navigation_warp_not_found", map_template=action.map_template))
 
         x, y, w, h = match_rect
         lx, ly = ctx.capture.to_logical(x + w // 2, y + h // 2)
