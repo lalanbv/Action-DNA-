@@ -187,46 +187,27 @@ class QtWorkflowActionsMixin:
     _NODE_SPACING_Y = 100
 
     def _import_steps(self, steps) -> None:
+        """导入步骤到 End 之前（D5：图变异委托共享 import_steps_before_end）。
+
+        纯逻辑下沉到 src.panel.shared.controllers.workflow_ops；Qt 视觉统一在
+        末尾 render_graph 一次重绘，与原内联实现行为一致。
+        """
         if not steps:
             return
 
+        from src.panel.shared.controllers.workflow_ops import import_steps_before_end
+
         graph = self._model.graph
-        end_incoming = graph.get_incoming_edges("end")
-        last_node_id = "start"
-        for e in end_incoming:
-            if e.from_node != "start":
-                last_node_id = e.from_node
+        import_steps_before_end(
+            graph,
+            self._controller,
+            steps,
+            default_x=self._DEFAULT_NODE_X,
+            default_y=self._DEFAULT_NODE_Y,
+            spacing_y=self._NODE_SPACING_Y,
+        )
 
-        for e in graph.get_outgoing_edges(last_node_id):
-            if e.to_node == "end":
-                self._controller.remove_edge(e.edge_id)
-
-        anchor = graph.get_node(last_node_id)
-        base_x = anchor.pos_x if anchor and anchor.pos_x else self._DEFAULT_NODE_X
-        base_y = anchor.pos_y if anchor and anchor.pos_y else self._DEFAULT_NODE_Y
-        first_y = base_y + self._NODE_SPACING_Y
-
-        prev_id: str = last_node_id
-
-        for i, step in enumerate(steps):
-            ny = first_y + i * self._NODE_SPACING_Y
-            node = self._controller.add_node(NodeType.ACTION, int(base_x), int(ny), step.action_type)
-            self._controller.update_node_action(node.node_id, replace(step))
-
-            edge = self._controller.add_edge(prev_id, node.node_id)
-            prev_id = node.node_id
-
-        edge = self._controller.add_edge(prev_id, "end")
-
-        end_node = graph.get_node("end")
-        if end_node:
-            updated_end = replace(
-                end_node,
-                pos_x=int(base_x),
-                pos_y=first_y + len(steps) * self._NODE_SPACING_Y,
-            )
-            graph.nodes["end"] = updated_end
-
+        # Qt 视觉：末尾一次性重绘（节点/边已由共享函数写入 graph）
         self._canvas.render_graph(graph)
         self._update_status_bar()
 

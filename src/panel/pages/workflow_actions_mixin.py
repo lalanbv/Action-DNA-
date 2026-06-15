@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
 from tkinter import ttk
 from typing import TYPE_CHECKING
 
@@ -195,60 +194,36 @@ class WorkflowActionsMixin:
         return x, y
 
     def _import_steps(self, steps: list[BaseStep]) -> None:
+        """导入步骤到 End 之前（D5：图变异委托共享 import_steps_before_end）。
+
+        纯逻辑下沉到 src.panel.shared.controllers.workflow_ops；本方法仅回放
+        tk 视觉（逐个 add_*_visual + End update_node_visual），与原内联实现行为一致。
+        """
         if not steps:
             return
 
+        from src.panel.shared.controllers.workflow_ops import import_steps_before_end
+
         graph = self._model.graph
+        result = import_steps_before_end(
+            graph,
+            self._controller,
+            steps,
+            default_x=LAYOUT_START_X,
+            default_y=LAYOUT_START_Y,
+            spacing_y=LAYOUT_SPACING_Y,
+        )
 
-        # Find the insertion point: the node immediately before End.
-        # NOTE: assumes a linear chain — branch graphs may need per-branch insertion.
-        end_incoming = graph.get_incoming_edges("end")
-        last_node_id = "start"
-        for e in end_incoming:
-            if e.from_node != "start":
-                last_node_id = e.from_node
-
-        # Remove the edge from insertion point → End so we can insert
-        # new nodes in between, then reconnect at the end.
-        for e in graph.get_outgoing_edges(last_node_id):
-            if e.to_node == "end":
-                self._controller.remove_edge(e.edge_id)
-                self._canvas.remove_edge_visual(e.edge_id)
-
-        # Layout: position new nodes below the insertion point
-        anchor = graph.get_node(last_node_id)
-        base_x = anchor.pos_x if anchor and anchor.pos_x else LAYOUT_START_X
-        base_y = anchor.pos_y if anchor and anchor.pos_y else LAYOUT_START_Y
-        first_y = base_y + LAYOUT_SPACING_Y
-
-        prev_id: str = last_node_id
-
-        for i, step in enumerate(steps):
-            ny = first_y + i * LAYOUT_SPACING_Y
-            node = self._controller.add_node(NodeType.ACTION, int(base_x), int(ny), step.action_type)
-            self._controller.update_node_action(node.node_id, replace(step))
-            self._canvas.add_node_visual(node)
-
-            edge = self._controller.add_edge(prev_id, node.node_id)
-            if edge:
-                self._canvas.add_edge_visual(edge)
-
-            prev_id = node.node_id
-
-        # Connect last imported node → End
-        edge = self._controller.add_edge(prev_id, "end")
-        if edge:
-            self._canvas.add_edge_visual(edge)
-
-        # Move End below the last imported node (immutable update)
-        end_node = graph.get_node("end")
-        if end_node:
-            updated_end = replace(
-                end_node,
-                pos_x=int(base_x),
-                pos_y=first_y + len(steps) * LAYOUT_SPACING_Y,
-            )
-            graph.nodes["end"] = updated_end
+        # 回放 tk 视觉（顺序与原内联实现一致：先移除旧 End 边视觉，再逐个加节点/边）
+        for edge_id in result.removed_edge_ids:
+            self._canvas.remove_edge_visual(edge_id)
+        for imp in result.imported:
+            self._canvas.add_node_visual(imp.node)
+            if imp.in_edge is not None:
+                self._canvas.add_edge_visual(imp.in_edge)
+        if result.end_edge is not None:
+            self._canvas.add_edge_visual(result.end_edge)
+        if result.end_position is not None:
             self._canvas.update_node_visual("end")
 
         self._update_status_bar()
