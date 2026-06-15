@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from src.core.input.global_hotkey_backend import BackendType, GlobalHotkeyBackend, create_backend
+from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class HotkeyManager:
 
         self._activate_binding(binding)
 
-        logger.debug("注册快捷键: %s -> %s (%s)", key_combo, action_name, description)
+        logger.debug(t("input.log.hotkey_registered", key_combo=key_combo, action=action_name, description=description))
         return True
 
     def unregister(self, action_name: str) -> None:
@@ -152,7 +153,6 @@ class HotkeyManager:
         config: object | None = None,
     ) -> None:
         """注册内置快捷键。可选传入 HotkeyConfig 自定义键位。"""
-        from src.utils.i18n import t
 
         if config is not None:
             items = [
@@ -296,7 +296,7 @@ class HotkeyManager:
             safe_cb = self._make_threadsafe_callback(binding.callback)
             self._backend.register(binding.key_combination, safe_cb)
         except Exception as e:
-            logger.error("注册全局热键失败 '%s': %s", binding.key_combination, e)
+            logger.error(t("input.log.global_hotkey_register_failed", key_combo=binding.key_combination, error=e))
 
     def _unregister_global(self, binding: HotkeyBinding) -> None:
         """注销全局热键。"""
@@ -313,7 +313,7 @@ class HotkeyManager:
         try:
             self._tk_root.bind(tk_key, lambda e: binding.callback())
         except Exception as e:
-            logger.error("tkinter 快捷键绑定失败 '%s': %s", tk_key, e)
+            logger.error(t("input.log.tkinter_bind_failed", tk_key=tk_key, error=e))
 
     def _unregister_tkinter(self, binding: HotkeyBinding) -> None:
         """注销 tkinter 快捷键。"""
@@ -345,9 +345,9 @@ class HotkeyManager:
             shortcut.activated.connect(binding.callback)
             self._qt_shortcuts[binding.key_combination] = shortcut
         except ImportError:
-            logger.debug("PySide6 不可用，跳过 Qt 快捷键注册")
+            logger.debug(t("input.log.pyside6_unavailable"))
         except Exception as e:
-            logger.error("Qt 快捷键绑定失败 '%s': %s", binding.key_combination, e)
+            logger.error(t("input.log.qt_bind_failed", key_combo=binding.key_combination, error=e))
 
     def _unregister_qt(self, binding: HotkeyBinding) -> None:
         """注销 Qt 快捷键。"""

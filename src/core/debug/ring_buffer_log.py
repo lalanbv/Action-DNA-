@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +96,7 @@ class RingBufferLog:
             try:
                 cb(entry)
             except Exception as e:
-                logger.error("RingBufferLog 回调异常: %s", e)
+                logger.error(t("debug.log.callback_exception", error=e))
 
         return entry
 
@@ -170,7 +172,7 @@ class RingBufferLog:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        logger.info("日志已导出: %s (%d 条)", filepath, len(data))
+        logger.info(t("debug.log.exported", filepath=filepath, line_count=len(data)))
 
     # ---- 回调 ----
 

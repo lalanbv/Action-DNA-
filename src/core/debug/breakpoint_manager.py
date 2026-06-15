@@ -13,6 +13,8 @@ import threading
 from dataclasses import dataclass
 from enum import Enum
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +62,7 @@ class BreakpointManager:
         )
         with self._lock:
             self._breakpoints[node_id] = bp
-        logger.debug("添加断点: %s (类型: %s)", node_id, bp_type.value)
+        logger.debug(t("debug.log.breakpoint_added", node_id=node_id, bp_type=bp_type.value))
         return bp
 
     def remove_breakpoint(self, node_id: str) -> None:

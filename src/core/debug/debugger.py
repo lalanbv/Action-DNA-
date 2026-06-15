@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Protocol
 
+from src.utils.i18n import t
+
 from src.core.debug.breakpoint_manager import (
     BreakpointManager,
     BreakpointType,
@@ -95,12 +97,12 @@ class Debugger:
         old_state = self._state
         self._state = new_state
         if old_state != new_state:
-            logger.info("调试器状态: %s → %s", old_state.value, new_state.value)
+            logger.info(t("debug.log.state_change", old_state=old_state.value, new_state=new_state.value))
             for cb in self._on_state_change:
                 try:
                     cb(old_state, new_state)
                 except Exception as e:
-                    logger.error("调试器回调异常: %s", e)
+                    logger.error(t("debug.log.state_callback_exception", error=e))
 
     # ---- 断点 ----
 
@@ -172,7 +174,7 @@ class Debugger:
             bp.hit_count += 1
 
         if bp.bp_type == BreakpointType.LOG:
-            logger.info("[日志断点] %s: %s", node_id, bp.log_message)
+            logger.info(t("debug.log.log_breakpoint_hit", node_id=node_id, message=bp.log_message))
             return None
 
         eval_ctx = build_eval_context(ctx)
@@ -193,7 +195,7 @@ class Debugger:
             try:
                 cb(node_id)
             except Exception as e:
-                logger.error("断点回调异常: %s", e)
+                logger.error(t("debug.log.breakpoint_callback_exception", error=e))
 
         self._action_event.wait()
         self._action_event.clear()
@@ -314,32 +316,32 @@ class DesktopContextService:
             try:
                 cursor = self._pyautogui.position()
             except Exception:
-                logger.debug("获取光标位置失败", exc_info=True)
+                logger.debug(t("debug.log.cursor_position_failed"), exc_info=True)
             try:
                 screen = self._pyautogui.size()
             except Exception:
-                logger.debug("获取屏幕尺寸失败", exc_info=True)
+                logger.debug(t("debug.log.screen_size_failed"), exc_info=True)
 
         active_region: tuple[int, int, int, int] | None = None
         if self._region_picker is not None:
             try:
                 active_region = self._region_picker.get_active_region()
             except Exception:
-                logger.debug("获取活动区域失败", exc_info=True)
+                logger.debug(t("debug.log.active_region_failed"), exc_info=True)
 
         cache_age = 0.0
         if self._frame_provider is not None:
             try:
                 cache_age = self._frame_provider.cache_age * 1000
             except Exception:
-                logger.debug("获取缓存年龄失败", exc_info=True)
+                logger.debug(t("debug.log.cache_age_failed"), exc_info=True)
 
         engine_state = "idle"
         if self._executor is not None:
             try:
                 engine_state = self._executor.state
             except Exception:
-                logger.debug("获取引擎状态失败", exc_info=True)
+                logger.debug(t("debug.log.engine_state_failed"), exc_info=True)
 
         return DesktopContext(
             cursor_position=cursor,

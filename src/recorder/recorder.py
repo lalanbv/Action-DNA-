@@ -13,6 +13,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from src.utils.i18n import t
 from src.utils.platform import IS_MACOS, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ class MacroRecorder:
             daemon=True,
         )
         self._capture_thread.start()
-        logger.info("宏录制已开始")
+        logger.info(t("recorder.log.started"))
 
     def stop(self) -> list[RecordedEvent]:
         """停止录制，返回事件列表副本。"""
@@ -263,7 +264,7 @@ class MacroRecorder:
         elif IS_WINDOWS:
             self._capture_loop_windows()
         else:
-            logger.error("不支持的平台: Linux")
+            logger.error(t("recorder.log.unsupported_platform_linux"))
             self._set_recording(False)
 
     def _capture_loop_macos(self) -> None:
@@ -418,7 +419,7 @@ class MacroRecorder:
                 return event
 
             if event_type == 0xFFFFFFFF:
-                logger.warning("CGEventTap 被系统超时禁用，尝试重新启用")
+                logger.warning(t("recorder.log.cgeventtap_timeout_disabled"))
                 if tap_ref[0] is not None:
                     CGEventTapEnable(tap_ref[0], True)
                 return event
@@ -433,7 +434,7 @@ class MacroRecorder:
                     etype_name = "key"
                 elif event_type == kCGEventFlagsChanged:
                     etype_name = "flags_changed"
-                logger.info("CGEvent 首次捕获: type=%d (%s)", event_type, etype_name)
+                logger.info(t("recorder.log.cgevent_first_capture", event_type=event_type, etype_name=etype_name))
 
             now = _get_event_time(event)
             delta = now - self._last_event_time
@@ -554,19 +555,19 @@ class MacroRecorder:
         )
 
         if tap_ref[0] is None:
-            logger.error("无法创建 CGEventTap — 请检查辅助功能权限")
+            logger.error(t("recorder.log.cgeventtap_create_failed"))
             self._set_recording(False)
             return
 
         source = CFMachPortCreateRunLoopSource(None, tap_ref[0], 0)
         CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes)
 
-        logger.info("macOS CGEventTap 已启动，开始捕获事件")
+        logger.info(t("recorder.log.cgeventtap_started"))
         CFRunLoopRun()
 
         CFMachPortInvalidate(tap_ref[0])
         self._run_loop = None
-        logger.info("macOS CGEventTap 已停止")
+        logger.info(t("recorder.log.cgeventtap_stopped"))
 
     def _capture_loop_windows(self) -> None:
         """Windows: pynput 监听系统级输入事件。"""
@@ -659,10 +660,10 @@ class MacroRecorder:
             mouse_listener.start()
             keyboard_listener.start()
 
-            logger.info("Windows pynput 监听已启动，开始捕获事件")
+            logger.info(t("recorder.log.windows_pynput_started"))
             self._stop_event.wait()
         except Exception as e:
-            logger.error("Windows 宏录制启动失败: %s", e)
+            logger.error(t("recorder.log.windows_start_failed", error=e))
         finally:
             for l in listeners:
                 try:
@@ -670,4 +671,4 @@ class MacroRecorder:
                 except Exception:
                     pass
             self._set_recording(False)
-            logger.info("Windows pynput 监听已停止")
+            logger.info(t("recorder.log.windows_pynput_stopped"))

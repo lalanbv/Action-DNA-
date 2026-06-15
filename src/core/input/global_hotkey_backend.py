@@ -8,6 +8,7 @@ import logging
 import threading
 from typing import Callable, Protocol
 
+from src.utils.i18n import t
 from src.utils.platform import IS_MACOS
 
 logger = logging.getLogger(__name__)
@@ -238,9 +239,9 @@ class PynputBackend:
             try:
                 self._listener = GlobalHotKeys(dict(self._bindings))
                 self._listener.start()
-                logger.debug("pynput GlobalHotKeys 已重启，绑定数: %d", len(self._bindings))
+                logger.debug(t("input.log.pynput_restarted", binding_count=len(self._bindings)))
             except Exception as e:
-                logger.error("pynput GlobalHotKeys 启动失败: %s", e)
+                logger.error(t("input.log.pynput_start_failed", error=e))
                 self._listener = None
 
 
@@ -285,7 +286,7 @@ class KeyboardBackend:
             keyboard.add_hotkey(key_combo, callback, suppress=True)
             return True
         except Exception as e:
-            logger.error("keyboard 注册热键失败 '%s': %s", key_combo, e)
+            logger.error(t("input.log.keyboard_register_failed", key_combo=key_combo, error=e))
             return False
 
     def unregister(self, key_combo: str) -> None:
@@ -304,13 +305,13 @@ def create_backend() -> GlobalHotkeyBackend | None:
     """按优先级选择可用的全局热键后端：pynput → keyboard → None。"""
     backend = PynputBackend()
     if backend.is_available():
-        logger.info("全局热键后端: pynput")
+        logger.info(t("input.log.backend_pynput"))
         return backend
 
     backend = KeyboardBackend()
     if backend.is_available():
-        logger.info("全局热键后端: keyboard")
+        logger.info(t("input.log.backend_keyboard"))
         return backend
 
-    logger.info("全局热键不可用，回退到 tkinter 绑定")
+    logger.info(t("input.log.backend_unavailable_fallback_tkinter"))
     return None
