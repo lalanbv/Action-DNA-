@@ -1,9 +1,6 @@
 """监控器配置对话框 — 配置后台弹窗检测与处理"""
 
-import os
-
 import tkinter as tk
-from tkinter import ttk, filedialog
 
 from src.core.action import FoundAction, MatchStrategy, ThresholdMode
 from src.core.monitor import MonitorConfig
@@ -11,7 +8,6 @@ from src.panel.canvas.theme import current_theme
 from src.panel.dialogs._dialog_utils import make_dialog
 from src.panel.dialogs.click_image_dialog import _FOUND_ACTION_OPTIONS
 from src.panel.dialogs.multi_template_editor import MultiTemplateEditor
-from src.utils.paths import get_assets_dir
 from src.panel.widgets import themed_button, themed_checkbutton, themed_dropdown, themed_entry, themed_frame, themed_label, themed_separator, themed_spinbox
 from src.utils.i18n import t
 
@@ -163,15 +159,3 @@ def open_monitor_dialog(parent, monitor: MonitorConfig, title: str, on_done):
     themed_button(btn_frame, text=t("common.cancel"), command=dlg.destroy, width=10).pack(side=tk.LEFT, padx=th.pad_sm)
 
     dlg.columnconfigure(1, weight=1)
-
-
-def _browse_image(var: tk.StringVar) -> None:
-    """浏览选择图片文件"""
-    initial_dir = get_assets_dir() if os.path.isdir(get_assets_dir()) else os.path.expanduser("~")
-    path = filedialog.askopenfilename(
-        title=t("dialog.title.select_image"),
-        initialdir=initial_dir,
-        filetypes=[(t("dialog.filetype.image_files"), "*.png *.jpg *.jpeg *.bmp"), (t("dialog.filetype.all"), "*.*")],
-    )
-    if path:
-        var.set(path)

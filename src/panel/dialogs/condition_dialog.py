@@ -1,7 +1,6 @@
 """条件构建器对话框 — 可视化构建条件表达式"""
 
 import tkinter as tk
-from tkinter import ttk, filedialog
 
 from src.core.action import MatchStrategy, ThresholdMode
 from src.core.condition import Condition, ConditionType
@@ -291,18 +290,3 @@ def _build_time_fields(parent, start_row, var_timer, var_timeout):
     themed_label(parent, text=t("dialog.hint.need_timer_step"), fg=th.text_muted).grid(
         row=start_row + 2, column=0, columnspan=2, sticky=tk.W, padx=th.pad_sm
     )
-
-
-def _browse_cond_image(var: tk.StringVar) -> None:
-    """浏览选择条件图片"""
-    import os
-    from src.utils.paths import get_assets_dir
-    assets = get_assets_dir()
-    initial_dir = assets if os.path.isdir(assets) else os.path.expanduser("~")
-    path = filedialog.askopenfilename(
-        title=t("dialog.title.select_condition_image"),
-        initialdir=initial_dir,
-        filetypes=[(t("dialog.filetype.image_files"), "*.png *.jpg *.jpeg *.bmp"), (t("dialog.filetype.all"), "*.*")],
-    )
-    if path:
-        var.set(path)
