@@ -1,0 +1,6 @@
+# Windows 批处理/PowerShell 脚本强制 CRLF 行尾
+# 根因:cmd.exe 期望 CRLF;LF-only 会破坏 () 块与 for 循环的解析,
+# 导致块内 echo 内容(如 spec 代码)泄漏成命令。BOM 由文件自身携带。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

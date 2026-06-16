@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 :: build_windows.bat — Windows 一键打包脚本
 :: 兼容 Python 3.11 ~ 3.14+，Windows 10/11 x64
 :: 使用方法: 双击运行或在 cmd 中执行 build_windows.bat
