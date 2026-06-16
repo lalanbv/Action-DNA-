@@ -21,10 +21,15 @@ echo.
 echo [1/6] 查找 Python...
 
 set PYTHON=
-for %%C in (python py -3.14 -3.13 -3.12 -3.11) do (
+:: 候选启动器优先级: PATH 上的 python/python3 → Windows py 启动器 → 指定版本
+:: 注意 1: 带空格的 "py -3.x" 必须加引号，否则 for 会按空格拆成 py 和 -3.x 两个 token
+:: 注意 2: 比较版本前用 "if defined FOUND_MAJOR" 守卫，防御 Windows Store 的 python
+::         占位符——它能返回 0 却不打印版本，会使空字符串参与比较而触发语法错误
+for %%C in (python python3 py "py -3.14" "py -3.13" "py -3.12" "py -3.11") do (
     if not defined PYTHON (
         set FOUND_MAJOR=
         set FOUND_MINOR=
+        set PY_VER_RAW=
         %%C --version >nul 2>&1
         if !errorlevel! equ 0 (
             for /f "tokens=2 delims= " %%V in ('%%C --version 2^>^&1') do set PY_VER_RAW=%%V
@@ -32,13 +37,15 @@ for %%C in (python py -3.14 -3.13 -3.12 -3.11) do (
                 set FOUND_MAJOR=%%A
                 set FOUND_MINOR=%%B
             )
-            if !FOUND_MAJOR! gtr %REQUIRED_MAJOR% (
-                set PYTHON=%%C
-                set PY_VERSION=!PY_VER_RAW!
-            )
-            if defined FOUND_MAJOR if !FOUND_MAJOR! equ %REQUIRED_MAJOR% if !FOUND_MINOR! geq %REQUIRED_MINOR% (
-                set PYTHON=%%C
-                set PY_VERSION=!PY_VER_RAW!
+            if defined FOUND_MAJOR (
+                if !FOUND_MAJOR! gtr %REQUIRED_MAJOR% (
+                    set PYTHON=%%C
+                    set PY_VERSION=!PY_VER_RAW!
+                )
+                if !FOUND_MAJOR! equ %REQUIRED_MAJOR% if !FOUND_MINOR! geq %REQUIRED_MINOR% (
+                    set PYTHON=%%C
+                    set PY_VERSION=!PY_VER_RAW!
+                )
             )
         )
     )
@@ -137,6 +144,8 @@ echo [6/6] 执行 PyInstaller 打包...
 echo.
 
 :: 生成 spec 文件（避免 cmd 行长度限制和转义问题）
+:: 关键:括号块 ( ... ) 内 echo 的每个 ( 和 ) 都必须转义为 ^( 和 ^)，
+:: 否则 cmd 逐字符数括号时配对失衡，会报 "( was unexpected" 并中止整个脚本。
 (
 echo # -*- mode: python ; coding: utf-8 -*-
 echo.
@@ -144,25 +153,25 @@ echo import sys, os
 echo.
 echo block_cipher = None
 echo.
-echo a = Analysis(
+echo a = Analysis^(
 echo     ['main.py'],
 echo     pathex=[],
 echo     binaries=[],
 echo     datas=[
 if exist "config" (
-    echo         ('config', 'config'^),
+    echo         ^('config', 'config'^),
 )
 if exist "assets" (
-    echo         ('assets', 'assets'^),
+    echo         ^('assets', 'assets'^),
 )
 if exist "src\utils\translations" (
-    echo         (r'src\utils\translations', 'src/utils/translations'^),
+    echo         ^(r'src\utils\translations', 'src/utils/translations'^),
 )
 if exist "src\plugins\builtin" (
-    echo         (r'src\plugins\builtin', 'src/plugins/builtin'^),
+    echo         ^(r'src\plugins\builtin', 'src/plugins/builtin'^),
 )
 if exist "docs" (
-    echo         ('docs', 'docs'^),
+    echo         ^('docs', 'docs'^),
 )
 echo     ],
 echo     hiddenimports=[
@@ -201,9 +210,9 @@ echo     cipher=block_cipher,
 echo     noarchive=False,
 echo ^)
 echo.
-echo pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher^)
+echo pyz = PYZ^(a.pure, a.zipped_data, cipher=block_cipher^)
 echo.
-echo exe = EXE(
+echo exe = EXE^(
 echo     pyz,
 echo     a.scripts,
 echo     [],
@@ -220,7 +229,7 @@ echo     codesign_identity=None,
 echo     entitlements_file=None,
 echo ^)
 echo.
-echo coll = COLLECT(
+echo coll = COLLECT^(
 echo     exe,
 echo     a.binaries,
 echo     a.zipfiles,
