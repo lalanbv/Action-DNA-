@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
 from collections import OrderedDict
 import os
 import sys
+import traceback
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QStyleFactory, QWidget,
@@ -66,23 +66,25 @@ def ensure_fusion_style() -> bool:
     return True
 
 
-# Qt 页面模块 — 导入以触发 @register_page 装饰器注册
-_QT_PAGE_MODULES: tuple[str, ...] = (
-    "src.panel.qt_backend.pages.home_page",
-    "src.panel.qt_backend.pages.action_chain_page",
-    "src.panel.qt_backend.pages.workflow_page",
-    "src.panel.qt_backend.pages.record_page",
-    "src.panel.qt_backend.pages.notification_page",
-    "src.panel.qt_backend.pages.schedule_page",
-    "src.panel.qt_backend.pages.settings_page",
-    "src.panel.qt_backend.pages.plugin_page",
+# 显式静态导入所有 Qt 页面模块。
+# 必须用静态 import，绝不能用 importlib.import_module(字符串)：
+#   1. 触发各页面模块顶部的 @register_page 装饰器，把页面注册进 PageRegistry；
+#   2. 让 PyInstaller 静态分析能追踪到这些模块 —— 字符串动态导入对
+#      PyInstaller 不可见，打包后这些模块不会进 bundle，运行时
+#      importlib.import_module 静默失败，导致「所有页面回退占位符」
+#      （即「双击 exe 进去完全不能用」的根因）。
+#   build_windows.bat 另用 collect_submodules('src') 兜底；此处静态导入
+#   是更根本、更可追踪的双保险，二者缺一不可。
+from src.panel.qt_backend.pages import (  # noqa: F401  (副作用导入：触发注册)
+    action_chain_page,
+    home_page,
+    notification_page,
+    plugin_page,
+    record_page,
+    schedule_page,
+    settings_page,
+    workflow_page,
 )
-
-for _mod in _QT_PAGE_MODULES:
-    try:
-        importlib.import_module(_mod)
-    except Exception:
-        logger.warning("Failed to import Qt page module: %s", _mod, exc_info=True)
 
 
 class StatusDot(QWidget):
@@ -452,29 +454,55 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             page = page_class(self._stack, self, **kwargs)
             page.build()
             page.on_enter(**kwargs)
-        except Exception:
-            logger.warning("Failed to create Qt page '%s', using placeholder", page_id, exc_info=True)
-            page = self._create_placeholder(page_id)
+        except Exception as exc:
+            # 关键：页面加载失败必须显眼暴露真实异常，绝不再静默回退到
+            # 「此页面将在后续 Phase 中实现」的死占位符 —— 那会让用户误以为
+            # 「功能没做」而非「出了错」，无从排查（本 bug 的直接放大器）。
+            logger.error("Failed to create Qt page '%s', using error placeholder", page_id, exc_info=True)
+            page = self._create_placeholder(page_id, exc)
 
         self._stack.addWidget(page)
         self._stack.setCurrentWidget(page)
         self._current_page_id = page_id
         self.setWindowTitle(f"Action<DNA> — {page_id}")
 
-    def _create_placeholder(self, page_id: str) -> QWidget:
-        """创建占位页面。"""
+    def _create_placeholder(self, page_id: str, exc: BaseException | None = None) -> QWidget:
+        """创建页面加载失败的占位页面，并直接渲染真实异常。
+
+        与早期版本的「此页面将在后续 Phase 中实现」不同：如今所有页面都已
+        实现，到达此处必定是真实异常（如 PyInstaller 漏打包模块、依赖缺失、
+        构造期抛错）。因此把异常类型、消息和完整 traceback 直接画出来，让
+        用户/开发者一眼看到根因，而不是面对一个误导性的「未实现」死页面。
+        """
         th = current_theme()
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(24, 24, 24, 24)
 
-        title = QLabel(f"📋 {page_id}")
-        title.setStyleSheet(f"color: {th.text_primary}; font-size: 20px; font-weight: bold; background: transparent;")
+        title = QLabel(f"⚠️ {t('common.load_failed')}: {page_id}")
+        title.setStyleSheet(f"color: {th.text_primary}; font-size: 18px; font-weight: bold; background: transparent;")
         layout.addWidget(title)
 
-        hint = QLabel("此页面将在后续 Phase 中实现\n当前使用 PySide6 后端")
-        hint.setStyleSheet(f"color: {th.text_muted}; font-size: 12px; background: transparent;")
-        layout.addWidget(hint)
+        if exc is not None:
+            # 异常摘要（类型 + 消息），一眼可见
+            summary = QLabel(f"{type(exc).__name__}: {exc}")
+            summary.setWordWrap(True)
+            summary.setStyleSheet(f"color: {th.text_primary}; font-size: 13px; background: transparent;")
+            layout.addWidget(summary)
+
+            # 完整 traceback，可选中文本以便复制上报
+            detail = QLabel(traceback.format_exc())
+            detail.setWordWrap(True)
+            detail.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            detail.setStyleSheet(
+                f"color: {th.text_muted}; font-size: 11px; font-family: monospace; background: transparent;"
+            )
+            layout.addWidget(detail)
+        else:
+            hint = QLabel(t("common.load_failed"))
+            hint.setStyleSheet(f"color: {th.text_muted}; font-size: 12px; background: transparent;")
+            layout.addWidget(hint)
+
         layout.addStretch()
 
         return page

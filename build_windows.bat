@@ -231,6 +231,13 @@ echo.
 echo # -*- mode: python ; coding: utf-8 -*-
 echo.
 echo import sys, os
+echo # IMPORTANT: call collect_submodules explicitly and merge into
+echo # hiddenimports. PyInstaller Analysis has NO collect_submodules kwarg;
+echo # writing collect_submodules= as a kwarg is silently ignored, so all
+echo # dynamically imported src modules -- pages, descriptors, plugins --
+echo # are missing from the bundle. At runtime importlib then fails silently
+echo # and every page falls back to a dead placeholder. This fixes that.
+echo from PyInstaller.utils.hooks import collect_submodules
 echo.
 echo block_cipher = None
 echo.
@@ -281,12 +288,11 @@ echo         'src.plugins.builtin.combat',
 echo         'src.plugins.builtin.navigation',
 echo         'src.plugins.builtin.task',
 echo         'unittest.mock',
-echo     ],
+echo     ] + collect_submodules^('src'^),
 echo     hookspath=[],
 echo     hooksconfig={},
 echo     runtime_hooks=[],
 echo     excludes=[],
-echo     collect_submodules=['src'],
 echo     cipher=block_cipher,
 echo     noarchive=False,
 echo ^)
