@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
@@ -72,8 +74,7 @@ def migrate_config(raw: dict[str, Any], section: str) -> dict[str, Any]:
         migrator = _MIGRATIONS.get((section, version))
         if migrator:
             logger.debug(
-                "配置迁移: %s v%d → v%d",
-                section, version, version + 1,
+                t("config.log.migration", section=section, old_version=version, new_version=version + 1)
             )
             current = migrator(current)
 

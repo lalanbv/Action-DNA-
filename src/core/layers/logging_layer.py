@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from src.core.engine.priority import SystemPriority
 from src.core.layers.layer import ErrorContext, GraphLayer
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -46,9 +47,7 @@ class LoggingLayer(GraphLayer):
 
         logger.log(
             self._log_level,
-            "[GRAPH_START] 图执行开始: %s, 节点数=%d",
-            graph_name,
-            node_count,
+            t("engine.log.graph_start", name=graph_name, node_count=node_count),
         )
 
     def on_graph_end(self, ctx: ExecutionContext) -> None:
@@ -57,10 +56,10 @@ class LoggingLayer(GraphLayer):
 
         logger.log(
             self._log_level,
-            "[GRAPH_END] 图执行结束: %s, 总步骤=%d, 耗时=%.0fms",
-            graph_name,
-            self._total_nodes,
-            elapsed_ms,
+            t(
+                "engine.log.graph_end",
+                name=graph_name, total_nodes=self._total_nodes, elapsed_ms=elapsed_ms,
+            ),
         )
 
     def on_node_enter(self, ctx: ExecutionContext) -> ExecutionContext:
@@ -73,10 +72,10 @@ class LoggingLayer(GraphLayer):
 
         logger.log(
             self._log_level,
-            "[NODE_ENTER] >>> 执行节点: %s (%s) 步骤=%d",
-            node.node_id,
-            node_label,
-            ctx.step_index,
+            t(
+                "engine.log.node_enter",
+                node_id=node.node_id, label=node_label, step=ctx.step_index,
+            ),
         )
         return ctx
 
@@ -85,14 +84,14 @@ class LoggingLayer(GraphLayer):
         ctx: ExecutionContext,
         result: NodeResult,
     ) -> NodeResult:
-        status = "成功" if result.success else "失败"
+        status = t("engine.log.node_status_success") if result.success else t("engine.log.node_status_failed")
         detail = result.output_vars if result.success else str(result.error)
         logger.log(
             self._log_level,
-            "[NODE_EXIT] <<< 节点完成: %s (%s) %s",
-            ctx.current_node.node_id,
-            status,
-            detail,
+            t(
+                "engine.log.node_exit",
+                node_id=ctx.current_node.node_id, status=status, detail=detail,
+            ),
         )
         return result
 
@@ -102,9 +101,11 @@ class LoggingLayer(GraphLayer):
         err_ctx: ErrorContext,
     ) -> ErrorContext:
         logger.error(
-            "[NODE_ERROR] !!! 节点异常: %s (%s) %s",
-            ctx.current_node.node_id,
-            type(err_ctx.error).__name__,
-            err_ctx.error,
+            t(
+                "engine.log.node_exception",
+                node_id=ctx.current_node.node_id,
+                error_type=type(err_ctx.error).__name__,
+                error=err_ctx.error,
+            )
         )
         return err_ctx

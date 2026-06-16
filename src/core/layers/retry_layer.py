@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from src.core.engine.priority import SystemPriority
 from src.core.layers.layer import ErrorContext, GraphLayer
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -76,10 +77,10 @@ class RetryLayer(GraphLayer):
             self._total_retries += 1
 
         logger.info(
-            "[RETRY] 节点 %s 第 %d 次重试, 错误: %s",
-            node_id,
-            current_retry + 1,
-            err_ctx.error,
+            t(
+                "engine.log.retry_layer_attempt",
+                node_id=node_id, attempt=current_retry + 1, error=err_ctx.error,
+            )
         )
 
         err_ctx.actions.append(

@@ -528,7 +528,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         信号重复发射）在新进程启动前反复触发 restart，造成重启风暴。
         """
         if getattr(self, "_restart_scheduled", False):
-            logger.debug("schedule_restart 已调度，忽略重复调用")
+            logger.debug(t("panel.log.schedule_restart_ignored"))
             return
         self._restart_scheduled = True
         self._stop_services()

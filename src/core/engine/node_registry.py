@@ -64,10 +64,12 @@ class NodeRegistry:
             if atype in cls._registry:
                 existing = cls._registry[atype]
                 logger.warning(
-                    "节点类型 '%s' 已被注册为 %s，将被 %s 覆盖",
-                    atype,
-                    existing.__name__,
-                    descriptor_class.__name__,
+                    t(
+                        "engine.log.node_type_already_registered",
+                        action_type=atype,
+                        existing=existing.__name__,
+                        new=descriptor_class.__name__,
+                    )
                 )
                 old_cat = existing.category()
                 if old_cat in cls._categories:

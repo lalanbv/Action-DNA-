@@ -230,9 +230,15 @@ class ClickImageDescriptor(NodeDescriptor):
                     parts.append(f"{error_count}次异常")
                 summary = ", ".join(parts)
                 logger.info(
-                    "[CLICK_IMAGE] \"%s\" — %d次尝试: %s, 第%d次命中 ✓ (位置=(%d,%d))",
-                    basename, attempt + 1, summary, attempt + 1,
-                    result.rect[0], result.rect[1],
+                    t(
+                        "engine.log.click_image_hit",
+                        basename=basename,
+                        attempt=attempt + 1,
+                        summary=summary,
+                        hit=attempt + 1,
+                        x=result.rect[0],
+                        y=result.rect[1],
+                    )
                 )
                 return result.rect
 
@@ -274,8 +280,14 @@ class ClickImageDescriptor(NodeDescriptor):
         while not ctx.stop_event.is_set():
             if time.monotonic() - start > self._MAX_WAIT_SECONDS:
                 logger.warning(
-                    "[CLICK_IMAGE] \"%s\" — WAIT 超时 %.0fs: %d次检查, %d次未匹配, %d次异常 ✗",
-                    basename, self._MAX_WAIT_SECONDS, check_count, miss_count, error_count,
+                    t(
+                        "engine.log.click_image_wait_timeout",
+                        basename=basename,
+                        max_seconds=self._MAX_WAIT_SECONDS,
+                        checks=check_count,
+                        misses=miss_count,
+                        errors=error_count,
+                    )
                 )
                 return NodeResult.fail(
                     t("engine.node_fail.wait_until_found_timeout", max_seconds=self._MAX_WAIT_SECONDS, image_path=action.image_path),
@@ -299,8 +311,14 @@ class ClickImageDescriptor(NodeDescriptor):
             if result.rect is not None:
                 elapsed = time.monotonic() - start
                 logger.info(
-                    "[CLICK_IMAGE] \"%s\" — WAIT 成功 ✓: %d次检查, %.1fs, 位置=(%d,%d)",
-                    basename, check_count, elapsed, result.rect[0], result.rect[1],
+                    t(
+                        "engine.log.click_image_wait_success",
+                        basename=basename,
+                        checks=check_count,
+                        elapsed=elapsed,
+                        x=result.rect[0],
+                        y=result.rect[1],
+                    )
                 )
                 if ctx.stop_event.is_set():
                     return NodeResult.fail(t("engine.node_fail.stop_signal_match_interrupt"))
@@ -310,8 +328,12 @@ class ClickImageDescriptor(NodeDescriptor):
             if check_count % progress_interval == 0:
                 elapsed = time.monotonic() - start
                 logger.info(
-                    "[CLICK_IMAGE] \"%s\" — WAIT 进行中: 已检查%d次, %.1fs...",
-                    basename, check_count, elapsed,
+                    t(
+                        "engine.log.click_image_wait_progress",
+                        basename=basename,
+                        checks=check_count,
+                        elapsed=elapsed,
+                    )
                 )
 
             wait = random.uniform(action.retry_wait_min, action.retry_wait_max)
@@ -370,18 +392,26 @@ class ClickImageDescriptor(NodeDescriptor):
             except Exception as exc:
                 if attempt < self._ACTION_RETRIES - 1:
                     logger.warning(
-                        "[CLICK_IMAGE] 动作执行异常，重试 (%d/%d): %s",
-                        attempt + 1, self._ACTION_RETRIES, exc,
+                        t(
+                            "engine.log.click_image_action_exception_retry",
+                            attempt=attempt + 1,
+                            retries=self._ACTION_RETRIES,
+                            error=exc,
+                        )
                     )
                     ctx.stop_event.wait(
                         timeout=random.uniform(0.1, 0.25),
                     )
                 else:
                     logger.error(
-                        "[CLICK_IMAGE] 动作执行失败，%d次重试耗尽: "
-                        "found_action=%s 位置=(%d, %d) 错误=%s",
-                        self._ACTION_RETRIES,
-                        params.found_action.value, target_x, target_y, exc,
+                        t(
+                            "engine.log.click_image_action_exhausted",
+                            retries=self._ACTION_RETRIES,
+                            found_action=params.found_action.value,
+                            x=target_x,
+                            y=target_y,
+                            error=exc,
+                        )
                     )
                     return NodeResult.fail(
                         t("engine.node_fail.action_exec_failed", retry_count=self._ACTION_RETRIES, error=exc),
@@ -392,8 +422,12 @@ class ClickImageDescriptor(NodeDescriptor):
         }
 
         logger.info(
-            "模板匹配成功: found_action=%s 位置=(%d, %d)",
-            params.found_action.value, target_x, target_y,
+            t(
+                "engine.log.click_image_match_success",
+                found_action=params.found_action.value,
+                x=target_x,
+                y=target_y,
+            )
         )
 
         if params.save_coord_name:

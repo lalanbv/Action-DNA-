@@ -161,17 +161,19 @@ class PluginLoader:
                 errors = self._validate_metadata(metadata)
                 if errors:
                     logger.error(
-                        "插件 '%s' 清单验证失败: %s",
-                        plugin_id,
-                        "; ".join(errors),
+                        t(
+                            "plugins.log.manifest_validation_failed",
+                            plugin_id=plugin_id, errors="; ".join(errors),
+                        )
                     )
                     continue
 
                 if not self._check_version_compat(metadata):
                     logger.warning(
-                        "插件 '%s' 需要应用版本 %s+，当前版本不兼容",
-                        plugin_id,
-                        metadata.min_app_version,
+                        t(
+                            "plugins.log.plugin_version_incompatible",
+                            plugin_id=plugin_id, min_version=metadata.min_app_version,
+                        )
                     )
                     continue
 
@@ -180,10 +182,10 @@ class PluginLoader:
                 self._invalidate_topo_cache()
                 discovered.append(plugin_id)
                 logger.info(
-                    "发现插件: %s v%s (%s)",
-                    metadata.plugin_name,
-                    metadata.version,
-                    metadata.plugin_id,
+                    t(
+                        "plugins.log.plugin_discovered",
+                        name=metadata.plugin_name, version=metadata.version, plugin_id=metadata.plugin_id,
+                    )
                 )
 
         return discovered
@@ -455,10 +457,11 @@ class PluginLoader:
         self._invalidate_topo_cache()
 
         logger.info(
-            "插件已加载: %s v%s (注册了 %d 个节点)",
-            metadata.plugin_name,
-            metadata.version,
-            len(context.registered_types),
+            t(
+                "plugins.log.plugin_loaded",
+                name=metadata.plugin_name, version=metadata.version,
+                node_count=len(context.registered_types),
+            )
         )
 
     def unload(self, plugin_id: str) -> None:
@@ -588,9 +591,10 @@ class PluginLoader:
                 if key in self._file_mtimes:
                     if mtime > self._file_mtimes[key]:
                         logger.info(
-                            "检测到插件 '%s' 文件变更: %s",
-                            plugin_id,
-                            py_file.name,
+                            t(
+                                "plugins.log.plugin_file_changed",
+                                plugin_id=plugin_id, file=py_file.name,
+                            )
                         )
                         changed.append(plugin_id)
                         for f in plugin_dir.rglob("*.py"):
@@ -623,9 +627,7 @@ class PluginLoader:
             for dep in entry.metadata.dependencies:
                 if dep not in self._plugins:
                     logger.warning(
-                        "插件 '%s' 的依赖 '%s' 不存在",
-                        plugin_id,
-                        dep,
+                        t("plugins.log.plugin_dep_missing", plugin_id=plugin_id, dep=dep)
                     )
                     continue
                 graph.setdefault(dep, []).append(plugin_id)

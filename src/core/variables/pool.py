@@ -216,9 +216,10 @@ class VariablePool:
                     self._scope_stack.pop()
                 else:
                     logger.warning(
-                        "pop_scope 栈顶不匹配: 期望 %s，实际 %s",
-                        self._scope_stack[-1].value,
-                        scope.value,
+                        t(
+                            "engine.log.pop_scope_mismatch",
+                            expected=self._scope_stack[-1].value, actual=scope.value,
+                        )
                     )
             logger.debug(t("variables.log.exit_scope", scope=scope.value))
 

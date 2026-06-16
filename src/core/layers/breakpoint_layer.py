@@ -148,9 +148,10 @@ class BreakpointLayer(GraphLayer):
         err_ctx: ErrorContext,
     ) -> ErrorContext:
         logger.debug(
-            "[BREAKPOINT] 节点 %s 异常: %s",
-            ctx.current_node.node_id,
-            err_ctx.error,
+            t(
+                "engine.log.breakpoint_node_exception",
+                node_id=ctx.current_node.node_id, error=err_ctx.error,
+            )
         )
         return err_ctx
 
@@ -173,7 +174,7 @@ class BreakpointLayer(GraphLayer):
             if bp is not None:
                 bp.one_shot = True
         logger.info(
-            "添加断点: %s (条件=%s, 一次性=%s)", node_id, condition, one_shot
+            t("engine.log.add_breakpoint", node_id=node_id, condition=condition, one_shot=one_shot)
         )
 
     def remove_breakpoint(self, node_id: str) -> None:
@@ -209,7 +210,7 @@ class BreakpointLayer(GraphLayer):
     def _hit_and_wait(self, ctx: ExecutionContext, node_id: str, hit_count: int) -> None:
 
         logger.info(
-            "[BREAKPOINT] 命中断点: %s (第 %d 次)", node_id, hit_count
+            t("engine.log.breakpoint_hit", node_id=node_id, hit_count=hit_count)
         )
 
         if self._screenshot_on_hit:

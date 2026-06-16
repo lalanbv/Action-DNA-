@@ -802,8 +802,10 @@ class TemplateMatcher:
             if rect is not None:
                 if strategy == MatchStrategy.FIRST_MATCH:
                     log.info(
-                        "[MULTI] \"%s\" 命中 (conf=%.2f, 策略=first_match, 第%d/%d张)",
-                        os.path.basename(path), score, i + 1, total,
+                        t(
+                            "vision.log.multi_match_first",
+                            basename=os.path.basename(path), score=score, idx=i + 1, total=total,
+                        )
                     )
                     return MultiMatchResult(path, rect, score, "first_match")
 
@@ -812,8 +814,10 @@ class TemplateMatcher:
                 # ADAPTIVE 高确信提前退出
                 if strategy == MatchStrategy.ADAPTIVE and score >= eff + self._EARLY_EXIT_MARGIN:
                     log.info(
-                        "[MULTI] \"%s\" 命中 (conf=%.2f, 策略=early_exit, 第%d/%d张)",
-                        os.path.basename(path), score, i + 1, total,
+                        t(
+                            "vision.log.multi_match_early_exit",
+                            basename=os.path.basename(path), score=score, idx=i + 1, total=total,
+                        )
                     )
                     return MultiMatchResult(path, rect, score, "early_exit")
 
@@ -826,8 +830,11 @@ class TemplateMatcher:
         used = "best_of" if strategy == MatchStrategy.BEST_CONFIDENCE else "adaptive_best"
         idx = template_paths.index(best.path) + 1
         log.info(
-            "[MULTI] \"%s\" 命中 (conf=%.2f, 策略=%s, 第%d/%d张)",
-            os.path.basename(best.path), best.confidence, used, idx, total,
+            t(
+                "vision.log.multi_match_best",
+                basename=os.path.basename(best.path), score=best.confidence,
+                strategy=used, idx=idx, total=total,
+            )
         )
         return MultiMatchResult(best.path, best.rect, best.confidence, used)
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Type
 
+from src.utils.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,9 +29,10 @@ class DialogRegistry:
         """注册对话框。"""
         if action_type in cls._registry:
             logger.warning(
-                "对话框已注册: '%s'，将被覆盖为 %s",
-                action_type,
-                dialog_class.__name__,
+                t(
+                    "plugins.log.dialog_already_registered",
+                    action_type=action_type, dialog_class=dialog_class.__name__,
+                )
             )
         cls._registry[action_type] = dialog_class
 

@@ -411,7 +411,7 @@ class GraphEngine:
 
                 if not self._config.tool_filter.is_allowed(action_type):
                     logger.info(
-                        "节点类型 %s 被工具过滤器拒绝，跳过", action_type,
+                        t("engine.log.node_type_blocked_by_tool_filter", action_type=action_type)
                     )
                     return ExecutionBlocker(
                         reason=f"工具过滤器拒绝: {action_type}"
@@ -442,11 +442,13 @@ class GraphEngine:
                 # 瞬态重试：短暂等待后再次尝试（不调用 on_exit，保持描述符状态）
                 if attempt < max_attempts - 1:
                     logger.info(
-                        "节点 %s 执行异常，瞬态重试 (%d/%d): %s",
-                        ctx.current_node.node_id,
-                        attempt + 1,
-                        self._config.transient_retry_count,
-                        e,
+                        t(
+                            "engine.log.transient_retry",
+                            node_id=ctx.current_node.node_id,
+                            attempt=attempt + 1,
+                            max=self._config.transient_retry_count,
+                            error=e,
+                        )
                     )
                     self._pause_aware_wait(
                         ctx, self._config.transient_retry_delay,
@@ -514,8 +516,7 @@ class GraphEngine:
                 if edge.label == result.next_label:
                     return _follow(edge.to_node)
             logger.warning(
-                "未找到标签为 '%s' 的出边，回退到默认",
-                result.next_label,
+                t("engine.log.out_edge_label_not_found", label=result.next_label)
             )
 
         # 规则 2：CONDITION 节点
@@ -584,8 +585,11 @@ class GraphEngine:
         match strategy:
             case ErrorStrategy.FAIL_FAST:
                 logger.error(
-                    "节点 %s 执行失败 (FAIL_FAST): %s",
-                    node_id, result.error,
+                    t(
+                        "engine.log.node_failed_fail_fast",
+                        node_id=node_id,
+                        error=result.error,
+                    )
                 )
                 return result
 
@@ -594,8 +598,11 @@ class GraphEngine:
 
             case ErrorStrategy.SKIP:
                 logger.info(
-                    "节点 %s 执行失败 (SKIP): %s",
-                    node_id, result.error,
+                    t(
+                        "engine.log.node_failed_skip",
+                        node_id=node_id,
+                        error=result.error,
+                    )
                 )
                 return None
 
@@ -604,8 +611,11 @@ class GraphEngine:
 
             case ErrorStrategy.IGNORE:
                 logger.warning(
-                    "节点 %s 执行失败 (IGNORE): %s",
-                    node_id, result.error,
+                    t(
+                        "engine.log.node_failed_ignore",
+                        node_id=node_id,
+                        error=result.error,
+                    )
                 )
                 return NodeResult(success=True, cooldown=random.uniform(0.3, 0.8))
 
@@ -621,15 +631,24 @@ class GraphEngine:
 
         if not policy.is_retryable(error):
             logger.warning(
-                "节点 %s 错误不可重试: %s", ctx.current_node.node_id, error,
+                t(
+                    "engine.log.error_not_retryable",
+                    node_id=ctx.current_node.node_id,
+                    error=error,
+                )
             )
             return self._apply_exhausted_strategy(result, exhausted_strategy)
 
         for attempt in range(policy.max_retries):
             delay = policy.calculate_delay(attempt)
             logger.info(
-                "节点 %s 重试 (%d/%d)，延迟 %.1fs",
-                ctx.current_node.node_id, attempt + 1, policy.max_retries, delay,
+                t(
+                    "engine.log.node_retry_delay",
+                    node_id=ctx.current_node.node_id,
+                    attempt=attempt + 1,
+                    max_retries=policy.max_retries,
+                    delay=delay,
+                )
             )
             self._pause_aware_wait(ctx, delay)
             if ctx.is_stopping:
@@ -647,8 +666,11 @@ class GraphEngine:
                 break
 
         logger.error(
-            "节点 %s 重试耗尽 (%d 次)",
-            ctx.current_node.node_id, policy.max_retries,
+            t(
+                "engine.log.retry_exhausted",
+                node_id=ctx.current_node.node_id,
+                max_retries=policy.max_retries,
+            )
         )
         return self._apply_exhausted_strategy(result, exhausted_strategy)
 

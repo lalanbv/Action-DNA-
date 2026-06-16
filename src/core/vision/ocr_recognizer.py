@@ -46,10 +46,7 @@ class OCRRecognizer:
             if self._initialized:
                 return
             if not OCR_AVAILABLE:
-                logger.warning(
-                    "rapidocr-onnxruntime 未安装，OCR 功能不可用。"
-                    "安装命令: pip install rapidocr-onnxruntime"
-                )
+                logger.warning(t("vision.log.ocr_not_installed"))
                 self._initialized = True
                 return
             try:

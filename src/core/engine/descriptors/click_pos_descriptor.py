@@ -84,8 +84,7 @@ class ClickPosDescriptor(NodeDescriptor):
                 )
             x, y = coords[0], coords[1]
             logger.info(
-                "使用坐标变量 '%s': (%s, %s)",
-                step.coord_var_name, x, y,
+                t("engine.log.click_pos_coord_var", name=step.coord_var_name, x=x, y=y)
             )
         else:
             x, y = step.pos_x, step.pos_y
@@ -99,16 +98,20 @@ class ClickPosDescriptor(NodeDescriptor):
         if step.hold_duration > 0.3:
             ctx.input_ctrl.long_press(x, y, duration=step.hold_duration)
             logger.info(
-                "长按坐标: (%s, %s) 按钮=%s 时长=%.2fs",
-                x, y, step.button, step.hold_duration,
+                t(
+                    "engine.log.click_pos_hold",
+                    x=x, y=y, button=step.button, duration=step.hold_duration,
+                )
             )
         else:
             ctx.input_ctrl.click(
                 x, y, button=step.button, clicks=step.clicks,
             )
             logger.info(
-                "点击坐标: (%s, %s) 按钮=%s 次数=%d",
-                x, y, step.button, step.clicks,
+                t(
+                    "engine.log.click_pos",
+                    x=x, y=y, button=step.button, clicks=step.clicks,
+                )
             )
 
         return NodeResult.ok()

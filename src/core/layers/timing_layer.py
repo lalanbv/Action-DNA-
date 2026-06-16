@@ -115,14 +115,15 @@ class TimingLayer(GraphLayer):
             if stats.call_count == 0:
                 continue
             logger.info(
-                "%-20s 调用=%3d  平均=%8.1fms  最大=%8.1fms  "
-                "最小=%8.1fms  成功率=%5.1f%%",
-                node_type,
-                stats.call_count,
-                stats.avg_ms,
-                stats.max_ms,
-                stats.min_ms,
-                stats.success_rate,
+                t(
+                    "engine.log.timing_stats",
+                    node_type=node_type,
+                    calls=stats.call_count,
+                    avg_ms=stats.avg_ms,
+                    max_ms=stats.max_ms,
+                    min_ms=stats.min_ms,
+                    success_rate=stats.success_rate,
+                )
             )
         logger.info("==================================")
 

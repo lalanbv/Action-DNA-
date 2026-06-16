@@ -78,9 +78,7 @@ class HotkeyManager:
             existing = self._key_to_action[key_combo]
             if existing != action_name:
                 logger.warning(
-                    "快捷键冲突: '%s' 已绑定到 '%s'",
-                    key_combo,
-                    existing,
+                    t("engine.log.hotkey_conflict", key_combo=key_combo, existing=existing)
                 )
                 return False
 

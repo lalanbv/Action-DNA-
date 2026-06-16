@@ -138,8 +138,11 @@ class MacroRecorder:
         click_count = sum(1 for e in events if e.event_type in ("mouse_down", "mouse_up"))
         key_count = sum(1 for e in events if e.event_type.startswith("key_"))
         logger.info(
-            "宏录制已停止，共 %d 事件 (移动:%d 拖拽:%d 滚轮:%d 点击:%d 按键:%d)",
-            len(events), move_count, drag_count, scroll_count, click_count, key_count,
+            t(
+                "recorder.log.stopped",
+                total=len(events), move=move_count, drag=drag_count,
+                scroll=scroll_count, click=click_count, key_count=key_count,
+            )
         )
         return events
 
@@ -313,10 +316,7 @@ class MacroRecorder:
                 kCFRunLoopCommonModes,
             )
         except ImportError:
-            logger.error(
-                "macOS 需要 pyobjc-framework-Quartz 库。"
-                "安装命令: pip install pyobjc-framework-Quartz"
-            )
+            logger.error(t("recorder.log.macos_pyobjc_missing"))
             self._set_recording(False)
             return
 
@@ -574,10 +574,7 @@ class MacroRecorder:
         try:
             from pynput import keyboard as kb, mouse as ms
         except ImportError:
-            logger.error(
-                "Windows 宏录制需要 pynput 库。"
-                "安装命令: pip install pynput"
-            )
+            logger.error(t("recorder.log.windows_pynput_missing"))
             self._set_recording(False)
             return
 

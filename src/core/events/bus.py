@@ -139,9 +139,7 @@ class TypedEventBus:
             except Exception:  # pylint: disable=broad-exception-caught
                 name = getattr(sub.handler, "__name__", str(sub.handler))
                 logger.error(
-                    "事件处理器 %s 处理 %s 时出错",
-                    name,
-                    event_type.__name__,
+                    t("engine.log.event_handler_error", handler=name, event_type=event_type.__name__),
                     exc_info=True,
                 )
 
@@ -197,9 +195,7 @@ class TypedEventBus:
             except Exception:  # pylint: disable=broad-exception-caught
                 name = getattr(handler, "__name__", str(handler))
                 logger.error(
-                    "字符串事件处理器 %s 处理 '%s' 时出错",
-                    name,
-                    event_name,
+                    t("engine.log.string_event_handler_error", handler=name, event_name=event_name),
                     exc_info=True,
                 )
 

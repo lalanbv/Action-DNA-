@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -154,8 +155,10 @@ class LoopDescriptor(NodeDescriptor):
 
         if max_count > 0 and current > max_count:
             logger.info(
-                "循环 %s 达到上限 (%d/%d)，准备退出",
-                node_id, current, max_count,
+                t(
+                    "engine.log.loop_limit_reached",
+                    node_id=node_id, current=current, max_count=max_count,
+                )
             )
             return NodeResult(
                 success=False,
@@ -168,10 +171,12 @@ class LoopDescriptor(NodeDescriptor):
             )
 
         logger.info(
-            "循环 %s 继续 (%s/%s)",
-            node_id,
-            current,
-            max_count if max_count > 0 else "∞",
+            t(
+                "engine.log.loop_continue",
+                node_id=node_id,
+                current=current,
+                max_count=max_count if max_count > 0 else "∞",
+            )
         )
         return NodeResult(
             success=True,

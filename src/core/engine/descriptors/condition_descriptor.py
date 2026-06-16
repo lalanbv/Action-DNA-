@@ -92,8 +92,10 @@ class ConditionDescriptor(NodeDescriptor):
 
         label = "true" if result else "false"
         logger.info(
-            "条件节点 %s: %s (条件: %s)",
-            node.node_id, label, condition.describe(),
+            t(
+                "engine.log.condition_result",
+                node_id=node.node_id, label=label, condition=condition.describe(),
+            )
         )
         return NodeResult(
             success=True,
