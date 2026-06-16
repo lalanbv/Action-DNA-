@@ -4,6 +4,7 @@ from enum import Enum, auto
 
 from src.core.logger import log
 from src.core.vision import ScreenCapture, TemplateMatcher
+from src.utils.i18n import t
 from src.utils.paths import template_path
 
 
@@ -50,7 +51,7 @@ class GameStateDetector:
             try:
                 result = self.matcher.find(screen, template_path(tpl_name), threshold=0.85)
                 if result is not None:
-                    log.debug(f"检测到游戏状态: {state.name}")
+                    log.debug(t("game.log.state_detected", state_name=state.name))
                     return state
             except FileNotFoundError:
                 continue
@@ -70,5 +71,5 @@ class GameStateDetector:
             if self.detect() == target:
                 return True
             time.sleep(interval)
-        log.warning(f"等待状态 {target.name} 超时 ({timeout}s)")
+        log.warning(t("game.log.state_wait_timeout", state_name=target.name, timeout=timeout))
         return False

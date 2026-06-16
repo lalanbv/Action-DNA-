@@ -7,6 +7,7 @@ from src.core.input import InputController
 from src.core.logger import log
 from src.core.vision import ScreenCapture, TemplateMatcher
 from src.game.game_state import GameState, GameStateDetector
+from src.utils.i18n import t
 from src.utils.paths import template_path
 
 
@@ -58,7 +59,7 @@ class CombatController:
         if now - self._last_skill_time >= self.config.skill_interval:
             self.input_ctrl.press_key("e")  # 技能键
             self._last_skill_time = now
-            log.debug("释放技能 E")
+            log.debug(t("game.log.skill_cast", key_name="E"))
 
         # 闪避
         if self.config.dodge_enabled:
@@ -68,7 +69,7 @@ class CombatController:
         """检查是否需要治疗"""
         hp = self.check_hp()
         if hp < self.config.heal_threshold:
-            log.info(f"血量较低 ({hp:.0%})，使用回复")
+            log.info(t("game.log.low_hp_heal", hp=f"{hp:.0%}"))
             self.input_ctrl.press_key("r")  # 回复键
             return True
         return False

@@ -120,7 +120,7 @@ class InputController(BezierMixin, PathReplayMixin):
     @strategy.setter
     def strategy(self, value: InputStrategy) -> None:
         self._strategy = value
-        log.info("输入策略切换为: %s", value.value)
+        log.info(t("input.log.strategy_switched", strategy=value.value))
 
     def _is_precise(self) -> bool:
         """当前是否使用精准模式。"""
@@ -135,7 +135,7 @@ class InputController(BezierMixin, PathReplayMixin):
         try:
             return primary_fn()
         except Exception as exc:
-            log.warning("输入操作失败，切换后备路径: %s", exc)
+            log.warning(t("input.log.fallback_triggered", error=exc))
             return fallback_fn()
 
     # ── Fail-Safe 角落逃生 ──────────────────────────────────────
@@ -262,7 +262,7 @@ class InputController(BezierMixin, PathReplayMixin):
             if i < clicks - 1:
                 multi_delay = 0.02 if self._is_precise() else self._rng.uniform(0.08, 0.16)
                 time.sleep(multi_delay)
-        log.info("  点击 (%d, %d) button=%s clicks=%d", x, y, button, clicks)
+        log.info(t("input.log.click", x=x, y=y, button=button, clicks=clicks))
 
     def left_click(self, x: int, y: int) -> None:
         """左键点击"""
@@ -301,7 +301,7 @@ class InputController(BezierMixin, PathReplayMixin):
             py = max(clamp[1], min(clamp[3], py))
         self._backend.micro(px, py)
         cn = self._backend.mouse_down(px, py, "left")
-        log.info("  长按 (%d, %d) %.1fs", x, y, duration)
+        log.info(t("input.log.long_press", x=x, y=y, duration=f"{duration:.1f}"))
         try:
             deadline = time.monotonic() + duration
             while True:
@@ -332,7 +332,7 @@ class InputController(BezierMixin, PathReplayMixin):
         cn = self._backend.mouse_down(ax, ay, "left")
         self._backend.move_anim(x2 + ox, y2 + oy, duration, self._get_mouse_pos, self._ensure_safe_position)
         self._backend.mouse_up(x2 + ox, y2 + oy, "left", cn)
-        log.info("  拖拽 (%d, %d) → (%d, %d)", x1, y1, x2, y2)
+        log.info(t("input.log.drag", x1=x1, y1=y1, x2=x2, y2=y2))
 
     def click_rect_center(
         self,
@@ -372,7 +372,7 @@ class InputController(BezierMixin, PathReplayMixin):
         self._backend.key_down(key)
         time.sleep(self._rng.uniform(0.03, 0.07))
         self._backend.key_up(key)
-        log.debug("按键 %s", key)
+        log.debug(t("input.log.key_press", key_name=key))
 
     def click_current_pos(
         self, button: str = "left",
@@ -487,7 +487,7 @@ class InputController(BezierMixin, PathReplayMixin):
             time.sleep(duration)
         finally:
             self._backend.key_up(key)
-        log.debug("按住 %s %.1fs", key, duration)
+        log.debug(t("input.log.key_hold", key_name=key, duration=f"{duration:.1f}"))
 
     def key_hold_interruptible(
         self,
@@ -527,7 +527,7 @@ class InputController(BezierMixin, PathReplayMixin):
         try:
             for i, key in enumerate(keys_hold):
                 self._backend.key_down(key)
-                log.debug("  按下 %s", key)
+                log.debug(t("input.log.key_down", key_name=key))
                 if i < len(keys_hold) - 1:
                     time.sleep(self._rng.uniform(0.03, 0.08))
 
@@ -536,14 +536,14 @@ class InputController(BezierMixin, PathReplayMixin):
 
             for i, key in enumerate(keys_tap):
                 if stop_check and stop_check():
-                    log.debug("  组合键被中断（tap 阶段）")
+                    log.debug(t("input.log.combo_interrupted_tap"))
                     return True
                 self._backend.key_down(key)
                 keys_tap_pressed.append(key)
                 time.sleep(self._rng.uniform(0.03, 0.07))
                 self._backend.key_up(key)
                 keys_tap_pressed.pop()
-                log.debug("  点击 %s", key)
+                log.debug(t("input.log.combo_tap", key_name=key))
                 if i < len(keys_tap) - 1:
                     interval = tap_interval or self._rng.uniform(0.08, 0.20)
                     time.sleep(interval)
@@ -552,7 +552,7 @@ class InputController(BezierMixin, PathReplayMixin):
                 deadline = time.monotonic() + hold_duration
                 while True:
                     if stop_check and stop_check():
-                        log.debug("  组合键被中断（hold 阶段）")
+                        log.debug(t("input.log.combo_interrupted_hold"))
                         return True
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -561,14 +561,14 @@ class InputController(BezierMixin, PathReplayMixin):
         finally:
             for key in reversed(keys_tap_pressed):
                 self._backend.key_up(key)
-                log.debug("  松开 tap 键 %s", key)
+                log.debug(t("input.log.combo_release_tap", key_name=key))
             for i, key in enumerate(reversed(keys_hold)):
                 self._backend.key_up(key)
-                log.debug("  松开 %s", key)
+                log.debug(t("input.log.key_up", key_name=key))
                 if i < len(keys_hold) - 1:
                     time.sleep(self._rng.uniform(0.02, 0.06))
 
-        log.info("  组合键 hold=%s tap=%s", keys_hold, keys_tap)
+        log.info(t("input.log.combo_summary", keys_hold=keys_hold, keys_tap=keys_tap))
         return False
 
     def reset_click_state(self) -> None:

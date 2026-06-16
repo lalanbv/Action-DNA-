@@ -5,6 +5,7 @@ import time
 from src.core.input import InputController
 from src.core.logger import log
 from src.core.vision import ScreenCapture, TemplateMatcher
+from src.utils.i18n import t
 from src.utils.paths import template_path
 
 
@@ -38,12 +39,12 @@ class Navigator:
         try:
             result = self.matcher.find(screen, template_path(marker_name), threshold=0.75)
             if result:
-                log.info(f"点击地图标记 [{marker_name}]")
+                log.info(t("game.log.map_marker_click", marker_name=marker_name))
                 self.input_ctrl.click_rect_center(result, offset_y=-5)
                 time.sleep(0.5)
                 return True
         except FileNotFoundError:
-            log.warning(f"地图标记模板不存在: {marker_name}")
+            log.warning(t("game.log.map_marker_missing", marker_name=marker_name))
         return False
 
     def auto_run(self, duration: float = 2.0) -> None:
