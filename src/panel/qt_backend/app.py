@@ -13,7 +13,7 @@ import os
 import sys
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QStackedWidget, QWidget,
+    QApplication, QMainWindow, QStackedWidget, QStyleFactory, QWidget,
     QLabel, QStatusBar, QHBoxLayout, QVBoxLayout,
 )
 from PySide6.QtCore import Qt, QTimer, QSize
@@ -42,6 +42,29 @@ def _safe_destroy_page(widget: QWidget) -> None:
             destroy()
         except Exception:
             logger.warning("destroy_page() failed", exc_info=True)
+
+
+def ensure_fusion_style() -> bool:
+    """全局强制 Fusion 样式，确保 QSS（含表头背景）被完整遵守。
+
+    macOS 默认的 QMacStyle 对 QHeaderView::section（表格/列表表头）、
+    滚动条、对话框按钮等控件做原生渐变绘制，忽略 QSS 的
+    background-color，导致深色主题下表头仍是系统浅灰（主题切换
+    表现为"没切成功"）。Fusion 是唯一跨平台且完全尊重 QSS 的 Qt
+    内置 style，与 tkinter 后端的 ``style.theme_use('clam')`` 对等。
+
+    幂等：多次调用安全，重复设置同一 style 无副作用。
+
+    Returns:
+        True 表示成功设置 Fusion；False 表示当前无 QApplication
+        实例，或当前 Qt 构建不支持 Fusion（offscreen 等极简环境）。
+    """
+    app = QApplication.instance()
+    if app is None or "Fusion" not in QStyleFactory.keys():
+        return False
+    app.setStyle(QStyleFactory.create("Fusion"))
+    return True
+
 
 # Qt 页面模块 — 导入以触发 @register_page 装饰器注册
 _QT_PAGE_MODULES: tuple[str, ...] = (
@@ -92,6 +115,10 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        # 全局 Fusion style 必须在任何 QSS 应用之前设置：macOS 默认
+        # QMacStyle 会原生渲染表头等控件、屏蔽 QSS background-color。
+        # Fusion 完全尊重 QSS，与 tkinter 端 style.theme_use('clam') 对等。
+        ensure_fusion_style()
         self.setWindowTitle("Action<DNA>")
         self.setMinimumSize(640, 480)
 
@@ -132,6 +159,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._monitor_timer: QTimer | None = None
         self._theme_sync_backend: QtThemeSyncBackend | None = None
         self._theme_sync: SystemThemeSync | None = None
+        self._restart_scheduled: bool = False
 
         # 页面导航 — 使用 QStackedWidget
         self._stack = QStackedWidget()
@@ -282,6 +310,14 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._set_status_label_color(th.text_muted)
         self._status_dot.set_color(th.status_ready)
 
+        # 当前页面(不在 _page_cache)也必须 apply_theme，否则其内部写死
+        # stylesheet 的控件（工具栏按钮、monitor 按钮等）不跟随主题切换。
+        current = self._stack.currentWidget() if hasattr(self, "_stack") else None
+        if current is not None and hasattr(current, "apply_theme"):
+            try:
+                current.apply_theme()
+            except Exception:
+                pass
         # Force update cached pages too (they won't get callbacks since not visible)
         for page in self._page_cache.values():
             if hasattr(page, "apply_theme"):
@@ -304,7 +340,9 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
 
         bar = QStatusBar()
         bar.setFixedHeight(sm.s(36))
-        bar.setStyleSheet(f"background-color: {th.bg_surface}; border-top: 1px solid {th.border_default};")
+        # 不设局部 stylesheet —— 用全局 QSS 的 QStatusBar 规则(随主题刷新)。
+        # 局部 setStyleSheet 会形成样式上下文隔离，导致主题切换时全局栏背景不刷新。
+        bar.setObjectName("dnaGlobalBar")
 
         layout = QHBoxLayout()
         layout.setContentsMargins(sm.s(8), 0, sm.s(8), 0)
@@ -484,13 +522,23 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
     # ── 生命周期 ──
 
     def schedule_restart(self) -> None:
-        """停止独占资源 → 启动新进程 → 终止当前进程。"""
+        """停止独占资源 → 启动新进程 → 终止当前进程。
+
+        防重入：若已调度过重启，直接返回。避免任何路径（用户快速连点、
+        信号重复发射）在新进程启动前反复触发 restart，造成重启风暴。
+        """
+        if getattr(self, "_restart_scheduled", False):
+            logger.debug("schedule_restart 已调度，忽略重复调用")
+            return
+        self._restart_scheduled = True
         self._stop_services()
         try:
             from src.utils.restart import restart_app
             restart_app()
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception(t("panel.log.restart_failed_recover"))
+            # 重启失败需重置标记，否则后续无法再次尝试
+            self._restart_scheduled = False
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(None, t("app.title"), t("settings.restart_failed"))
             self._services_ready = True
@@ -521,8 +569,15 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._services_ready = False
 
     def run(self) -> None:
-        """显示窗口并启动事件循环。"""
+        """显示窗口并启动事件循环。
+
+        show() 后主动 raise_() + activateWindow()，确保窗口激活到前台。
+        macOS 上从命令行（非 .app bundle）启动或重启后的新进程，
+        窗口不会自动获得焦点/置顶，用户会以为"没打开"。
+        """
         self.show()
+        self.raise_()
+        self.activateWindow()
         QApplication.instance().exec()
 
     def closeEvent(self, event) -> None:

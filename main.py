@@ -6,19 +6,40 @@ import traceback
 
 from src.utils.platform import IS_FROZEN, IS_MACOS, IS_WINDOWS
 
+# macOS 警告抑制时保存的原始 stderr fd 副本（指向真实终端）。
+# _suppress_macos_warnings() 会把 C 层 fd 2 重定向到 /dev/null 以屏蔽
+# 无害的 TSM/IMK 警告，但这也吞掉了 Qt/底层 C 库的致命错误输出。
+# 这里保留原始副本，供 _show_fatal_error() 临时恢复，确保致命错误可见。
+_original_stderr_fd: int | None = None
+
 
 def _show_fatal_error(title: str, message: str) -> None:
-    """打包模式下显示致命错误对话框，否则打印到 stderr。"""
+    """打包模式下显示致命错误对话框，否则打印到 stderr。
+
+    macOS 下若已启用警告抑制（C 层 fd 2 → /dev/null），临时恢复 fd 2
+    指向真实终端，确保致命错误的 traceback 一定能输出到控制台。
+    """
+    global _original_stderr_fd
     if IS_FROZEN and IS_WINDOWS:
         import ctypes
         _windll = getattr(ctypes, "windll", None)
         if _windll is not None:
             _windll.user32.MessageBoxW(0, message, title, 0x10)
-    else:
-        print(f"\n{'='*60}", file=sys.stderr)
-        print(f"[{title}]", file=sys.stderr)
-        print(message, file=sys.stderr)
-        print(f"{'='*60}\n", file=sys.stderr)
+        return
+
+    # macOS: 临时把 C 层 fd 2 恢复到真实终端（若曾被抑制）
+    restored = False
+    if IS_MACOS and _original_stderr_fd is not None:
+        try:
+            os.dup2(_original_stderr_fd, 2)
+            restored = True
+        except OSError:
+            pass
+
+    print(f"\n{'='*60}", file=sys.stderr, flush=True)
+    print(f"[{title}]", file=sys.stderr, flush=True)
+    print(message, file=sys.stderr, flush=True)
+    print(f"{'='*60}\n", file=sys.stderr, flush=True)
 
 
 def _setup():
@@ -45,8 +66,14 @@ def _suppress_macos_warnings() -> None:
     TSM CapsLock / IMK mach port 等警告。这些警告不影响功能，
     但会污染控制台输出。通过将 C 层 fd 2 重定向到 /dev/null 抑制，
     同时将 Python sys.stderr 重指向原始 fd，保留 Python 错误输出。
+
+    原始 fd 2 的副本同时存入模块变量 _original_stderr_fd，
+    供 _show_fatal_error() 在输出致命错误时临时恢复，避免 Qt/底层
+    C 库的致命错误被一并吞掉。
     """
+    global _original_stderr_fd
     _stderr_fd = os.dup(2)
+    _original_stderr_fd = _stderr_fd
     devnull = os.open(os.devnull, os.O_WRONLY)
     os.dup2(devnull, 2)
     os.close(devnull)
@@ -74,6 +101,27 @@ def _enable_dpi_awareness() -> None:
             continue
 
 
+def _qt_cocoa_active() -> bool:
+    """检测本进程是否已存在「非 offscreen」的 QApplication（macOS 原生 GUI）。
+
+    用于 main() 的 Qt→Tk 回退决策：macOS 上用 cocoa 平台插件创建的
+    QApplication 会初始化 NSApplication，此后创建 tk.Tk() 会触发 Tcl/Tk9
+    颜色初始化的 SIGABRT（无法被 try/except 捕获；crash report:
+    Tkapp_New→GetRGBA→doesNotRecognizeSelector）。offscreen/minimal 不创建
+    冲突的 NSApplication，可安全与 Tk 共存。
+
+    与 tests/conftest.py 的 ``_skip_tk_root_when_qt_cocoa_active`` 同源逻辑。
+    """
+    if not IS_MACOS:
+        return False
+    try:
+        from PySide6.QtWidgets import QApplication
+    except Exception:
+        return False
+    app = QApplication.instance()
+    return app is not None and app.platformName() != "offscreen"
+
+
 def main():
     try:
         _setup()
@@ -86,6 +134,7 @@ def main():
 
         from src.panel.backend_selector import use_qt_backend
         app = None
+        qt_init_error: Exception | None = None
         if use_qt_backend():
             try:
                 from PySide6.QtWidgets import QApplication
@@ -94,9 +143,31 @@ def main():
                 from src.panel.qt_backend.app import QtPanelApp
                 app = QtPanelApp()
             except Exception as exc:
+                # 记录 Qt 失败原因，供下方回退决策使用
+                qt_init_error = exc
+                # 同时打印到 stderr，避免仅靠 logging（可能未配置 handler）
+                # 导致用户看不到回退原因。
                 import logging
-                logging.getLogger(__name__).warning("Qt 后端初始化失败，回退到 tkinter: %s", exc)
+                logging.getLogger(__name__).warning(
+                    "Qt 后端初始化失败: %s", exc, exc_info=True
+                )
+                print(
+                    f"[警告] Qt 后端初始化失败: {exc}",
+                    file=sys.stderr, flush=True,
+                )
         if app is None:
+            # macOS 防护：若 Qt 已用 cocoa 创建 QApplication(NSApplication)，
+            # 再创建 tk.Tk() 会触发 Tcl/Tk9 颜色初始化的 SIGABRT（无法被
+            # try/except 捕获）。此时回退到 tkinter 不安全，改为报致命错误
+            # 退出，避免静默硬崩。Linux/Windows 不受影响（无此冲突）。
+            if _qt_cocoa_active():
+                _show_fatal_error(
+                    "Action<DNA> Qt 后端初始化失败",
+                    f"Qt 后端初始化失败，且 macOS 下无法安全回退到 tkinter"
+                    f"（QApplication(cocoa) 已存在，回退会触发 Tcl/Tk9 颜色"
+                    f"初始化的 SIGABRT 硬崩溃）。\n\n原因: {qt_init_error}",
+                )
+                sys.exit(1)
             from src.panel.app import PanelApp
             app = PanelApp()
 

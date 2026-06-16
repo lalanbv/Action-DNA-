@@ -39,7 +39,13 @@ def _build_cmd() -> list[str]:
 
 
 def _popen_kwargs() -> dict:
-    """构建平台相关的 Popen 参数，确保新进程完全解耦。"""
+    """构建平台相关的 Popen 参数，确保新进程完全解耦。
+
+    重要：stdout/stderr 继承父进程（不重定向到 DEVNULL）。
+    旧实现曾把输出全部丢弃，导致重启后用户终端"看不到任何报错"，
+    也无法从日志判断新进程是否启动成功。保留 stdin=DEVNULL，
+    因为新进程不需要终端输入。
+    """
     if sys.platform == "win32":
         return {
             "creationflags": (
@@ -47,10 +53,9 @@ def _popen_kwargs() -> dict:
                 | subprocess.DETACHED_PROCESS
             ),
             "close_fds": True,
+            "stdin": subprocess.DEVNULL,
         }
     return {
         "start_new_session": True,
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
     }

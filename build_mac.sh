@@ -176,6 +176,10 @@ for mod in "${HIDDEN_IMPORTS[@]}"; do
     HIDDEN_ARGS+=(--hidden-import "$mod")
 done
 
+# 收集整个 src 包子模块 — 代码大量使用 importlib 动态导入页面/对话框/插件
+# (qt_backend/app.py、page_registry.py、plugin_loader.py),PyInstaller 静态分析
+# 无法追踪字符串参数,必须整包收集,否则打包后页面加载失败即闪退。
+# collect-data PySide6 确保 Qt 插件/翻译资源完整,避免运行时崩溃。
 pyinstaller \
     --name "$APP_NAME" \
     --noconfirm \
@@ -183,6 +187,8 @@ pyinstaller \
     --windowed \
     "${ADD_DATA_ARGS[@]}" \
     "${HIDDEN_ARGS[@]}" \
+    --collect-submodules src \
+    --collect-data PySide6 \
     --osx-bundle-identifier "com.action-dna.app" \
     "$ENTRY_POINT" \
     2>&1 || fail "PyInstaller 打包失败，请检查上方错误信息"

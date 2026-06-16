@@ -28,7 +28,7 @@
     "max_consecutive_failures": 5
   },
   "editor": {
-    "theme_mode": "dark",
+    "theme_mode": "system",
     "gui_backend": "qt"
   },
   "language": {

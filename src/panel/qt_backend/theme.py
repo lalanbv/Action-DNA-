@@ -61,11 +61,58 @@ def theme_to_qss(t: CanvasTheme) -> str:
     QPushButton[dnaBtnStyle="ghost"]:hover {{
         background-color: {t.bg_surface_hover};
     }}
+    /* 监控区紧凑按钮(action_chain）—— objectName 引用全局 QSS，随主题刷新 */
+    QPushButton#dnaMonBtn {{
+        background-color: {t.btn_bg};
+        color: {t.text_primary};
+        border: 1px solid {t.border_default};
+        border-radius: 3px;
+        padding: 2px {qt_scale_manager().s(6)}px;
+        font-size: {qt_scale_manager().s(9)}px;
+    }}
+    QPushButton#dnaMonBtn:hover {{
+        background-color: {t.btn_bg_hover};
+        border-color: {t.accent_blue};
+    }}
+    /* 工具栏文字按钮（transparent 背景）—— objectName 引用全局 QSS，随主题刷新 */
+    QPushButton#dnaToolBtn {{
+        background: transparent;
+        border: none;
+        padding: 4px 8px;
+        color: {t.text_primary};
+    }}
+    QPushButton#dnaToolBtn:hover {{
+        background: {t.bg_surface_hover};
+        border-radius: 3px;
+    }}
 
     /* ── 标签 ── */
     QLabel {{
         background: transparent;
         color: {t.text_primary};
+    }}
+    /* 区域标题(themed_section_header)——用 dynamic property 引用全局 QSS，
+       避免局部 stylesheet 隔离导致主题切换不跟随。 */
+    QLabel#dnaSectionHeader {{
+        background-color: {t.panel_header_bg};
+        color: {t.text_primary};
+        font-weight: bold;
+        font-size: {qt_scale_manager().s(9)}px;
+        border-bottom: 1px solid {t.border_default};
+    }}
+    QLabel#dnaTitle {{
+        color: {t.text_primary};
+        font-weight: bold;
+        font-size: {qt_scale_manager().s(10)}px;
+    }}
+    /* 页面状态栏（base_page _build_qt_status_bar）—— objectName 全局 QSS，随主题刷新 */
+    QWidget#dnaStatusBar {{
+        background-color: {t.panel_bg};
+        border-top: 1px solid {t.border_default};
+    }}
+    QLabel#dnaStatusLabel {{
+        color: {t.text_muted};
+        font-size: {qt_scale_manager().s(11)}px;
     }}
 
     /* ── 输入框 ── */
@@ -231,6 +278,13 @@ def theme_to_qss(t: CanvasTheme) -> str:
         subcontrol-origin: margin;
         left: {t.pad_md}px;
         padding: 0 {t.pad_xs}px;
+    }}
+
+    /* ── 样式化容器(_styled_panel 用 objectName 引用，避免局部 stylesheet 隔离）── */
+    QFrame#dnaStyledPanel {{
+        background-color: {t.panel_bg};
+        border: 1px solid {t.border_default};
+        border-radius: 4px;
     }}
 
     /* ── 分隔线 ── */

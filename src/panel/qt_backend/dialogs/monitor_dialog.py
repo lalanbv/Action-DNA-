@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Callable
 
 from PySide6.QtCore import Qt
@@ -11,24 +10,21 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from src.core.action import FoundAction, MatchStrategy, ThresholdMode
+from src.core.action import FoundAction
 from src.core.monitor import MonitorConfig
 from src.panel.qt_backend.dialogs._mappings import _FOUND_ACTION_I18N
 from src.panel.qt_backend.dialogs.multi_template_editor import MultiTemplateEditorQt
 from src.utils.i18n import t
-from src.utils.paths import get_assets_dir
 
 
 class QtMonitorDialog(QDialog):
@@ -119,28 +115,6 @@ class QtMonitorDialog(QDialog):
         btn_row.addWidget(ok_btn)
         btn_row.addWidget(cancel_btn)
         layout.addLayout(btn_row)
-
-    def _make_browse_row(self, initial_text: str) -> tuple[QWidget, QLineEdit]:
-        row = QWidget()
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
-        edit = QLineEdit(initial_text)
-        lay.addWidget(edit)
-        btn = QPushButton(t("dialog.btn.browse"))
-        btn.clicked.connect(lambda: self._browse_image(edit))
-        lay.addWidget(btn)
-        return row, edit
-
-    def _browse_image(self, target: QLineEdit) -> None:
-        initial_dir = get_assets_dir() if os.path.isdir(get_assets_dir()) else os.path.expanduser("~")
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            t("dialog.title.select_image"),
-            initial_dir,
-            f"{t('dialog.filetype.image_files')} (*.png *.jpg *.jpeg *.bmp);;{t('dialog.filetype.all')} (*.*)",
-        )
-        if path:
-            target.setText(path)
 
     def _on_ok(self) -> None:
         idx = self._action_combo.currentIndex()

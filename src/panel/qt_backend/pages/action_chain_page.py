@@ -96,13 +96,12 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
     @staticmethod
     def _styled_panel() -> tuple[QFrame, QVBoxLayout]:
-        th = current_theme()
         sm = qt_scale_manager()
         frame = QFrame()
-        frame.setStyleSheet(
-            f"QFrame {{ background-color: {th.panel_bg}; "
-            f"border: 1px solid {th.border_default}; border-radius: 4px; }}"
-        )
+        # 用 objectName 引用全局 QSS 的 QFrame#dnaStyledPanel 规则，而非局部
+        # setStyleSheet —— 后者会形成样式上下文隔离，导致主题切换时子树内的
+        # QTreeWidget 内容区(viewport)不重新解析样式(内容区停留旧主题色)。
+        frame.setObjectName("dnaStyledPanel")
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(sm.s(4), sm.s(4), sm.s(4), sm.s(4))
         return frame, layout
@@ -125,7 +124,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
         def _tb(text: str, handler) -> QPushButton:
             b = QPushButton(text)
-            b.setStyleSheet(btn_style)
+            b.setObjectName("dnaToolBtn")  # 工具栏按钮样式来自全局 QSS，随主题刷新
             b.clicked.connect(handler)
             return b
 
@@ -297,7 +296,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         frame, frame_layout = self._styled_panel()
 
         title = QLabel(t("chain.steps"))
-        title.setStyleSheet(f"color: {th.text_primary}; font-weight: bold; font-size: {sm.s(10)}px;")
+        title.setObjectName("dnaTitle")
         frame_layout.addWidget(title)
 
         self._step_tree = QTreeWidget()
@@ -328,7 +327,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         frame, frame_layout = self._styled_panel()
 
         title = QLabel(t("chain.tab.monitors"))
-        title.setStyleSheet(f"color: {th.text_primary}; font-weight: bold; font-size: {sm.s(10)}px;")
+        title.setObjectName("dnaTitle")
         frame_layout.addWidget(title)
 
         self._mon_tree = QTreeWidget()
@@ -354,20 +353,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         ]:
             btn = QPushButton(icon)
             btn.setFixedHeight(sm.s(24))
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {th.btn_bg};
-                    color: {th.text_primary};
-                    border: 1px solid {th.border_default};
-                    border-radius: 3px;
-                    padding: 2px {sm.s(6)}px;
-                    font-size: {sm.s(9)}px;
-                }}
-                QPushButton:hover {{
-                    background-color: {th.btn_bg_hover};
-                    border-color: {th.accent_blue};
-                }}
-            """)
+            btn.setObjectName("dnaMonBtn")  # 紧凑按钮样式来自全局 QSS，随主题刷新
             btn.clicked.connect(lambda _checked, h=handler: h())
             btn_row.addWidget(btn)
             # 保存编辑/切换/删除按钮引用，用于根据选择状态启用/禁用

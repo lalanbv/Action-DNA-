@@ -69,30 +69,25 @@ class QtBasePage(ThemeCallbackMixin, QWidget):
             self._log_text.appendPlainText(msg)
 
     def _build_qt_status_bar(self, *, center_label: bool = False) -> QWidget:
-        th = current_theme()
         sm = qt_scale_manager()
 
         bar = QWidget()
         bar.setFixedHeight(sm.s(24))
-        bar.setStyleSheet(
-            f"background-color: {th.panel_bg}; "
-            f"border-top: 1px solid {th.border_default};"
-        )
+        bar.setObjectName("dnaStatusBar")  # 样式来自全局 QSS，随主题刷新
 
         h = QHBoxLayout(bar)
         h.setContentsMargins(sm.s(8), 0, sm.s(8), 0)
 
-        status_style = f"color: {th.text_muted}; font-size: {sm.s(11)}px;"
         self._status_left = QLabel("")
-        self._status_left.setStyleSheet(status_style)
+        self._status_left.setObjectName("dnaStatusLabel")
         self._status_right = QLabel("")
-        self._status_right.setStyleSheet(status_style)
+        self._status_right.setObjectName("dnaStatusLabel")
         h.addWidget(self._status_left)
 
         if center_label:
             h.addStretch()
             self._status_center = QLabel("")
-            self._status_center.setStyleSheet(status_style)
+            self._status_center.setObjectName("dnaStatusLabel")
             h.addWidget(self._status_center)
 
         h.addStretch()

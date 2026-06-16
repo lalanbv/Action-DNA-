@@ -316,19 +316,13 @@ def _build_button_qss(bg: str, fg: str) -> str:
 
 
 def themed_section_header(parent: QWidget, text: str) -> QLabel:
-    """创建调色板区域标题（带背景色 + 粗体 + 下边框）。"""
-    th = current_theme()
+    """创建调色板区域标题（背景色 + 粗体 + 下边框来自全局 QSS，随主题刷新）。"""
     sm = qt_scale_manager()
     label = QLabel(f"  {text}", parent)
     label.setFixedHeight(sm.s(22))
-    label.setProperty("_dna_section_header", True)
-    label.setStyleSheet(f"""
-        background-color: {th.panel_header_bg};
-        color: {th.text_primary};
-        font-weight: bold;
-        font-size: {sm.s(9)}px;
-        border-bottom: 1px solid {th.border_default};
-    """)
+    label.setObjectName("dnaSectionHeader")
+    # 样式来自全局 QSS 的 QLabel[_dna_section_header] 规则；不设局部
+    # stylesheet 以避免样式上下文隔离导致主题切换不跟随（与 _styled_panel 同理）。
     return label
 
 

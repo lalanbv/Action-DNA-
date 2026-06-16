@@ -1,5 +1,6 @@
 """主控制面板 — 薄壳路由器，页面导航框架"""
 
+import gc
 import importlib
 import logging
 import os
@@ -75,6 +76,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         self._pages_registered = False
         self._pulse_state: bool = False
         self._pulse_id: str | None = None
+        self._restart_scheduled: bool = False
         self._executor_source_page: str | None = None
         self._last_exec_running: bool | None = None
 
@@ -93,6 +95,32 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
 
         # 定时器调度器（解耦 root.after 直接调用）
         self._timer = TkTimerScheduler(self.root)
+
+        # GC 线程安全防护：禁用自动循环 GC，改由主线程周期性 gc.collect()。
+        # 根因：CPython 自动循环 GC 可在任意后台线程（如 monitor 检测线程）经
+        # _Py_HandlePending 触发；若此时回收含 Tkapp（Tk root 解释器）的不可达
+        # 引用环（页面导航「销毁旧页面/建新页面」会产生 widget↔controller↔callback
+        # 环），会在非创建线程 dealloc Tk 解释器 → Tcl_AsyncDelete → Tcl_Panic
+        # → SIGTRAP 硬崩溃（crash report: Thread "monitor-*" 的 gc_collect_main
+        # → Tkapp_Dealloc）。Tcl/Tk 解释器线程亲和，必须在创建线程释放。
+        # 禁用自动 GC 后，引用计数归零的对象仍即时释放，仅循环垃圾改由主线程
+        # （Tk 创建线程，after 回调必在此运行）周期回收 → dealloc 安全。
+        gc.disable()
+
+        def _gc_collect_main() -> None:
+            """主线程周期性回收循环垃圾（自调度，配合上面的 gc.disable）。
+
+            在 Tk mainloop 的 after 回调中运行 → 必为主线程，Tk 对象在此线程
+            创建故 dealloc 安全。after 为一次性，故每次执行后重新自调度。
+            """
+            try:
+                gc.collect()
+            except Exception:  # noqa: BLE001 — GC 失败不应中断 Tk 主循环
+                logger.debug("gc.collect() on main thread failed", exc_info=True)
+            finally:
+                self._gc_collect_id = self._timer.schedule(2000, _gc_collect_main)
+
+        self._gc_collect_id = self._timer.schedule(2000, _gc_collect_main)
 
         # 首页（不依赖重型服务）
         self.navigate_to(PAGE_HOME)
@@ -531,13 +559,23 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         return self._executor_source_page
 
     def schedule_restart(self) -> None:
-        """停止独占资源 → 启动新进程 → 终止当前进程。"""
+        """停止独占资源 → 启动新进程 → 终止当前进程。
+
+        防重入：若已调度过重启，直接返回（与 Qt 后端对等）。避免任何路径
+        在新进程启动前反复触发 restart，造成重启风暴。
+        """
+        if getattr(self, "_restart_scheduled", False):
+            logger.debug("schedule_restart 已调度，忽略重复调用")
+            return
+        self._restart_scheduled = True
         self._stop_services()
         try:
             from src.utils.restart import restart_app
             restart_app()
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception(t("panel.log.restart_failed_recover"))
+            # 重启失败需重置标记，否则后续无法再次尝试
+            self._restart_scheduled = False
             from tkinter import messagebox
             messagebox.showerror(t("app.title"), t("settings.restart_failed"))
             self._services_ready = True
@@ -566,6 +604,16 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         self._services_ready = False
 
     def run(self):
+        # 确保窗口可见并置顶激活（对等 Qt 后端的 raise_/activateWindow）。
+        # 重启后的新进程窗口在 macOS 上可能不自动获得焦点，lift + attributes
+        # 短暂置顶可让用户立即看到窗口。
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(100, lambda: self.root.attributes("-topmost", False))
+        except tk.TclError:
+            pass
         self.root.mainloop()
 
     def _on_resize(self, event: tk.Event) -> None:

@@ -32,9 +32,24 @@ def get_project_root() -> str:
     return _project_root
 
 
+def _read_only_root() -> str:
+    """只读资源根目录：打包模式指向 _MEIPASS（PyInstaller 解压的临时 bundle），
+    开发模式回退到项目根。
+
+    config/settings.json、assets/templates/*.png 通过 --add-data 打进
+    _MEIPASS（只读、每次启动重新解压），必须从此处读取。可写数据
+    （profiles/、assets/logs/）仍用 get_project_root()，避免写入只读临时目录。
+    """
+    if IS_FROZEN:
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return meipass
+    return get_project_root()
+
+
 def get_assets_dir() -> str:
-    """获取模板图片目录"""
-    return os.path.join(get_project_root(), "assets", "templates")
+    """获取模板图片目录（只读资源，打包模式从 _MEIPASS 读取）"""
+    return os.path.join(_read_only_root(), "assets", "templates")
 
 
 def get_logs_dir() -> str:
