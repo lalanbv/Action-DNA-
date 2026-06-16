@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from src.core.engine.priority import SystemPriority
 from src.core.layers.layer import GraphLayer
 from src.core.logger import log
+from src.utils.i18n import t
 
 if TYPE_CHECKING:
     from src.core.engine.execution_context import ExecutionContext
@@ -45,5 +46,7 @@ class MonitorCoordinationLayer(GraphLayer):
 
         done = self._monitor_manager.wait_for_handlers(_HANDLER_WAIT_TIMEOUT)
         if not done:
-            log.warning("monitor handler 等待超时 (%.1fs)", _HANDLER_WAIT_TIMEOUT)
+            log.warning(
+                t("layers.log.monitor_handler_wait_timeout", seconds=f"{_HANDLER_WAIT_TIMEOUT:.1f}")
+            )
         return ctx

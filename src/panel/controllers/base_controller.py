@@ -109,7 +109,7 @@ class BaseController(ABC):
         graph = self._profile_mgr.load(name)
         self._matcher.clear_cache()
         self.model.load_graph(graph, name)
-        log.info("已加载配置: %s", name)
+        log.info(t("panel.log.profile_loaded", name=name))
 
     def save_profile(self, name: str | None = None) -> str | None:
         name = name or self.model.current_profile_name
@@ -118,14 +118,14 @@ class BaseController(ABC):
         self._profile_mgr.save(name, self.model.graph)
         self.model.current_profile_name = name
         self.model.mark_clean()
-        log.info("配置已保存: %s", name)
+        log.info(t("panel.log.profile_saved", name=name))
         return name
 
     def delete_profile(self, name: str) -> None:
         self._profile_mgr.delete(name)
         if self.model.current_profile_name == name:
             self.model.current_profile_name = None
-        log.info("已删除配置: %s", name)
+        log.info(t("panel.log.profile_deleted", name=name))
 
     # ── 区域 ──────────────────────────────────────────────
 

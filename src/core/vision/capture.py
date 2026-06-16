@@ -818,7 +818,7 @@ class TemplateMatcher:
                     return MultiMatchResult(path, rect, score, "early_exit")
 
         if not candidates:
-            log.info("[MULTI] %d 张模板全部未匹配 ✗", total)
+            log.info(t("vision.log.multi_no_match", total=total))
             return None
 
         # 兜底:全局最佳(ADAPTIVE 的模糊态 / BEST_CONFIDENCE)
