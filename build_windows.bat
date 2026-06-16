@@ -1,31 +1,47 @@
-﻿@echo off
+@echo off
 :: build_windows.bat — Windows 一键打包脚本
-:: 兼容 Python 3.11 ~ 3.14+，Windows 10/11 x64
+:: 推荐 Python 3.12 / 3.13；兼容 3.11；3.14+ 仅作兜底并告警
+:: Windows 10/11 x64
 :: 使用方法: 双击运行或在 cmd 中执行 build_windows.bat
+::
+:: 【显示 bug 根因 — 切勿破坏】本文件必须保存为「无 BOM」+ CRLF 行尾。
+::   若文件以 UTF-8 BOM(EF BB BF) 开头，cmd 会把 BOM 字节拼到首行
+::   @echo off 之前，导致 @echo off 失效 -> 全部命令被回显，并连锁造成
+::   「卡在 activate.bat」的假象(见下方第 3 步注释)。
 
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
+title Action-DNA Windows 打包
+
 set APP_NAME=Action-DNA
 set ENTRY_POINT=main.py
 set VENV_DIR=.venv_build
+:: 直接调用 venv 内的解释器 "%VPY%"，不再 call activate.bat。
+:: 理由: activate.bat 自带的 @echo off 会把 echo 状态泄漏给父脚本，
+::       使后续 pip 命令既不回显也不打印进度；叠加 BOM 导致 echo 全开时，
+::       用户看到的最后一行就是 call activate.bat，误以为「卡死」，
+::       实际是 pip 在静默下载/编译。
+set "VPY=%VENV_DIR%\Scripts\python.exe"
 set REQUIRED_MAJOR=3
-set REQUIRED_MINOR=11
+set REQUIRED_MINOR_MIN=11
+set REQUIRED_MINOR_MAX=13
 
 echo =========================================
 echo   %APP_NAME% — Windows 一键打包
 echo =========================================
 echo.
 
-:: ── 1. 查找 Python ──
+:: ── 1. 查找 Python（优先 3.12/3.13，避开 3.14）──
 echo [1/6] 查找 Python...
 
 set PYTHON=
-:: 候选启动器优先级: PATH 上的 python/python3 → Windows py 启动器 → 指定版本
-:: 注意 1: 带空格的 "py -3.x" 必须加引号，否则 for 会按空格拆成 py 和 -3.x 两个 token
-:: 注意 2: 比较版本前用 "if defined FOUND_MAJOR" 守卫，防御 Windows Store 的 python
-::         占位符——它能返回 0 却不打印版本，会使空字符串参与比较而触发语法错误
-for %%C in (python python3 py "py -3.14" "py -3.13" "py -3.12" "py -3.11") do (
+:: 第一轮: 只接受 3.11~3.13。重科学栈(opencv/PySide6/numpy/onnxruntime)
+::        在该区间预编译轮子最齐全，打包成功率最高。
+:: 注意 1: 带空格的 "py -3.x" 必须在 for 列表里加引号，否则按空格拆 token。
+:: 注意 2: 用 "if defined FOUND_MAJOR" 守卫，防御 Windows Store 的 python
+::         占位符——它能返回 0 却不打印版本，空串参与比较会触发语法错误。
+for %%C in ("py -3.12" "py -3.13" "py -3.11" python python3) do (
     if not defined PYTHON (
         set FOUND_MAJOR=
         set FOUND_MINOR=
@@ -38,11 +54,7 @@ for %%C in (python python3 py "py -3.14" "py -3.13" "py -3.12" "py -3.11") do (
                 set FOUND_MINOR=%%B
             )
             if defined FOUND_MAJOR (
-                if !FOUND_MAJOR! gtr %REQUIRED_MAJOR% (
-                    set PYTHON=%%C
-                    set PY_VERSION=!PY_VER_RAW!
-                )
-                if !FOUND_MAJOR! equ %REQUIRED_MAJOR% if !FOUND_MINOR! geq %REQUIRED_MINOR% (
+                if !FOUND_MAJOR! equ %REQUIRED_MAJOR% if !FOUND_MINOR! geq %REQUIRED_MINOR_MIN% if !FOUND_MINOR! leq %REQUIRED_MINOR_MAX% (
                     set PYTHON=%%C
                     set PY_VERSION=!PY_VER_RAW!
                 )
@@ -51,9 +63,42 @@ for %%C in (python python3 py "py -3.14" "py -3.13" "py -3.12" "py -3.11") do (
     )
 )
 
+:: 第二轮: 仍未找到则回退到任意 Python ^>= 3.11(含 3.14)，并明确告警。
+::         3.14 较新，部分依赖可能尚无 cp314 轮子；如本轮在 numpy 等处报
+::         "from versions: none"，请改装 3.12 或 3.13 后重试。
+if not defined PYTHON (
+    echo   [WARN] 未发现 3.11~3.13，回退尝试任意 Python ^>= 3.11 ...
+    for %%C in ("py -3.14" "py -3.15" python python3) do (
+        if not defined PYTHON (
+            set FOUND_MAJOR=
+            set FOUND_MINOR=
+            set PY_VER_RAW=
+            %%C --version >nul 2>&1
+            if !errorlevel! equ 0 (
+                for /f "tokens=2 delims= " %%V in ('%%C --version 2^>^&1') do set PY_VER_RAW=%%V
+                for /f "tokens=1,2 delims=." %%A in ("!PY_VER_RAW!") do (
+                    set FOUND_MAJOR=%%A
+                    set FOUND_MINOR=%%B
+                )
+                if defined FOUND_MAJOR (
+                    if !FOUND_MAJOR! gtr %REQUIRED_MAJOR% (
+                        set PYTHON=%%C
+                        set PY_VERSION=!PY_VER_RAW!
+                    )
+                    if !FOUND_MAJOR! equ %REQUIRED_MAJOR% if !FOUND_MINOR! geq %REQUIRED_MINOR_MIN% (
+                        set PYTHON=%%C
+                        set PY_VERSION=!PY_VER_RAW!
+                    )
+                )
+            )
+        )
+    )
+)
+
 if not defined PYTHON (
     echo   [FAIL] 未找到 Python ^>= 3.11
-    echo   请从 https://www.python.org/downloads/ 安装
+    echo   推荐: 安装 Python 3.12 或 3.13，重依赖轮子最齐全
+    echo   下载: https://www.python.org/downloads/
     echo   安装时勾选 "Add Python to PATH"
     pause
     exit /b 1
@@ -68,7 +113,7 @@ echo [2/6] 检查运行环境...
 for /f %%A in ('%PYTHON% -c "import struct; print(\"64-bit\" if struct.calcsize(\"P\")*8==64 else \"32-bit\")"') do set ARCH=%%A
 echo   [OK] !ARCH! Python
 
-:: ── 3. 创建/激活虚拟环境 ──
+:: ── 3. 创建/复用虚拟环境（不激活，直接用 %VPY%）──
 echo.
 echo [3/6] 准备构建虚拟环境...
 
@@ -83,7 +128,7 @@ if exist "%VENV_DIR%\pyvenv.cfg" (
     )
 )
 
-if not exist "%VENV_DIR%\Scripts\activate.bat" (
+if not exist "%VPY%" (
     echo   创建构建虚拟环境...
     %PYTHON% -m venv "%VENV_DIR%"
     if !errorlevel! neq 0 (
@@ -92,38 +137,51 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
         exit /b 1
     )
     echo   [OK] 虚拟环境已创建
+) else (
+    echo   [OK] 复用已有虚拟环境
 )
 
-call "%VENV_DIR%\Scripts\activate.bat"
-
-:: 升级 pip
-python -m pip install --upgrade pip --quiet 2>nul || (
+:: 升级 pip（显示输出；失败仅告警不中断，pip 通常仍可用）
+echo   升级 pip...
+"%VPY%" -m pip install --upgrade pip
+if !errorlevel! neq 0 (
     echo   [WARN] pip 升级失败，继续使用当前版本
 )
 
 :: ── 4. 安装依赖 ──
 echo.
 echo [4/6] 安装依赖...
+echo   [INFO] 首次将下载 opencv / PySide6 / numpy 等，合计约数百 MB，
+echo          可能需要数分钟到十几分钟，请耐心等待。
+echo          屏幕会持续滚动下载进度；若长时间无任何输出才是异常。
 
-pip install --quiet -r requirements.txt
+"%VPY%" -m pip install -r requirements.txt
 if !errorlevel! neq 0 (
+    echo.
     echo   [FAIL] 安装项目依赖失败
+    echo   常见原因: Python 版本过新，例如 3.14 缺少预编译轮子，
+    echo            报错形如 "from versions: none"，请改装 3.12 或 3.13。
     pause
     exit /b 1
 )
 echo   [OK] 项目依赖已安装
 
-pip install --quiet pyinstaller
+echo   安装 PyInstaller...
+"%VPY%" -m pip install pyinstaller
 if !errorlevel! neq 0 (
     echo   [FAIL] 安装 PyInstaller 失败
     pause
     exit /b 1
 )
-for /f "tokens=*" %%V in ('pyinstaller --version 2^>^&1') do set PYI_VER=%%V
-echo   [OK] PyInstaller !PYI_VER!
+:: 以模块方式取版本号，写入临时文件再读取，规避 for /f 内的引号转义
+"%VPY%" -m PyInstaller --version >"%TEMP%\adna_pyiver.txt" 2>nul
+set PYI_VER=
+if exist "%TEMP%\adna_pyiver.txt" set /p PYI_VER=<"%TEMP%\adna_pyiver.txt"
+del "%TEMP%\adna_pyiver.txt" >nul 2>&1
+echo   [OK] PyInstaller !PYI_VER! 已就绪
 
 :: 检查 OCR 可选依赖
-pip show rapidocr_onnxruntime >nul 2>&1
+"%VPY%" -m pip show rapidocr_onnxruntime >nul 2>&1
 if !errorlevel! equ 0 (
     echo   [OK] rapidocr_onnxruntime 已安装（含 OCR 支持）
 ) else (
@@ -241,8 +299,8 @@ echo     name='%APP_NAME%',
 echo ^)
 ) > "%APP_NAME%.spec"
 
-:: 用 spec 文件打包
-pyinstaller --noconfirm --clean "%APP_NAME%.spec" 2>&1
+:: 用 spec 文件打包（以模块方式调用，不依赖 activate）
+"%VPY%" -m PyInstaller --noconfirm --clean "%APP_NAME%.spec" 2>&1
 
 if !errorlevel! neq 0 (
     echo.
