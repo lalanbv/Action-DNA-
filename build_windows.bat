@@ -1,46 +1,54 @@
 @echo off
-:: build_windows.bat — Windows 一键打包脚本
-:: 推荐 Python 3.12 / 3.13；兼容 3.11；3.14+ 仅作兜底并告警
+:: build_windows.bat - Windows one-click build script for Action-DNA
+:: Recommended: Python 3.12 / 3.13. Compatible with 3.11. 3.14+ is a fallback with a warning.
 :: Windows 10/11 x64
-:: 使用方法: 双击运行或在 cmd 中执行 build_windows.bat
+:: Usage: double-click, or run "build_windows.bat" in cmd.
 ::
-:: 【显示 bug 根因 — 切勿破坏】本文件必须保存为「无 BOM」+ CRLF 行尾。
-::   若文件以 UTF-8 BOM(EF BB BF) 开头，cmd 会把 BOM 字节拼到首行
-::   @echo off 之前，导致 @echo off 失效 -> 全部命令被回显，并连锁造成
-::   「卡在 activate.bat」的假象(见下方第 3 步注释)。
+:: ENCODING (important - do not break): This file is PURE ASCII on purpose.
+::   A .bat that contains Chinese/UTF-8 text breaks on Chinese Windows:
+::     - With a UTF-8 BOM: the BOM is glued in front of the first line, so
+::       "@echo off" is not recognized and every command gets echoed.
+::     - Without a BOM: cmd reads the file as the OEM codepage (GBK/CP936),
+::       so UTF-8 Chinese becomes mojibake and some byte sequences split
+::       statements, producing errors like "'13' is not recognized".
+::   Keeping the file ASCII avoids this whole class of bugs on any locale.
+::   If Chinese output is mandatory, re-save THIS file as GBK (CP936) instead.
 
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-title Action-DNA Windows 打包
+title Action-DNA Windows Build
 
 set APP_NAME=Action-DNA
 set ENTRY_POINT=main.py
 set VENV_DIR=.venv_build
-:: 直接调用 venv 内的解释器 "%VPY%"，不再 call activate.bat。
-:: 理由: activate.bat 自带的 @echo off 会把 echo 状态泄漏给父脚本，
-::       使后续 pip 命令既不回显也不打印进度；叠加 BOM 导致 echo 全开时，
-::       用户看到的最后一行就是 call activate.bat，误以为「卡死」，
-::       实际是 pip 在静默下载/编译。
+:: Call the venv interpreter directly ("%VPY%"); do NOT "call activate.bat".
+::   activate.bat carries its own "@echo off", which leaks the echo state into
+::   this parent script. With echo on, the last echoed line becomes
+::   "call activate.bat" and it looks frozen, while pip is silently working.
+::   Calling the venv python.exe directly avoids that entirely.
 set "VPY=%VENV_DIR%\Scripts\python.exe"
 set REQUIRED_MAJOR=3
 set REQUIRED_MINOR_MIN=11
 set REQUIRED_MINOR_MAX=13
 
 echo =========================================
-echo   %APP_NAME% — Windows 一键打包
+echo   %APP_NAME% - Windows one-click build
 echo =========================================
 echo.
 
-:: ── 1. 查找 Python（优先 3.12/3.13，避开 3.14）──
-echo [1/6] 查找 Python...
+:: -- 1. Find Python (prefer 3.12/3.13, avoid 3.14) --
+echo [1/6] Finding Python...
 
 set PYTHON=
-:: 第一轮: 只接受 3.11~3.13。重科学栈(opencv/PySide6/numpy/onnxruntime)
-::        在该区间预编译轮子最齐全，打包成功率最高。
-:: 注意 1: 带空格的 "py -3.x" 必须在 for 列表里加引号，否则按空格拆 token。
-:: 注意 2: 用 "if defined FOUND_MAJOR" 守卫，防御 Windows Store 的 python
-::         占位符——它能返回 0 却不打印版本，空串参与比较会触发语法错误。
+:: Round 1: accept only 3.11~3.13. The heavy stack (opencv/PySide6/numpy/
+::          onnxruntime) ships the most complete prebuilt wheels in this range,
+::          which maximizes the packaging success rate.
+:: Note 1: "py -3.x" contains a space, so it MUST be quoted in the for-list,
+::         otherwise for splits it into the tokens "py" and "-3.x".
+:: Note 2: Guard with "if defined FOUND_MAJOR" to defend against the Windows
+::         Store python stub, which returns 0 yet prints no version; an empty
+::         string in the comparison would trigger a syntax error.
 for %%C in ("py -3.12" "py -3.13" "py -3.11" python python3) do (
     if not defined PYTHON (
         set FOUND_MAJOR=
@@ -63,11 +71,12 @@ for %%C in ("py -3.12" "py -3.13" "py -3.11" python python3) do (
     )
 )
 
-:: 第二轮: 仍未找到则回退到任意 Python ^>= 3.11(含 3.14)，并明确告警。
-::         3.14 较新，部分依赖可能尚无 cp314 轮子；如本轮在 numpy 等处报
-::         "from versions: none"，请改装 3.12 或 3.13 后重试。
+:: Round 2: if still not found, fall back to any Python >= 3.11 (incl. 3.14)
+::          and warn clearly. 3.14 is new; some deps may lack cp314 wheels. If
+::          this round later fails at numpy with "from versions: none", install
+::          3.12 or 3.13 and retry.
 if not defined PYTHON (
-    echo   [WARN] 未发现 3.11~3.13，回退尝试任意 Python ^>= 3.11 ...
+    echo   [WARN] 3.11~3.13 not found, falling back to any Python ^>= 3.11 ...
     for %%C in ("py -3.14" "py -3.15" python python3) do (
         if not defined PYTHON (
             set FOUND_MAJOR=
@@ -96,114 +105,115 @@ if not defined PYTHON (
 )
 
 if not defined PYTHON (
-    echo   [FAIL] 未找到 Python ^>= 3.11
-    echo   推荐: 安装 Python 3.12 或 3.13，重依赖轮子最齐全
-    echo   下载: https://www.python.org/downloads/
-    echo   安装时勾选 "Add Python to PATH"
+    echo   [FAIL] Python ^>= 3.11 not found
+    echo   Recommended: install Python 3.12 or 3.13 (best wheel coverage)
+    echo   Download: https://www.python.org/downloads/
+    echo   Tick "Add Python to PATH" during install
     pause
     exit /b 1
 )
 
 echo   [OK] Python !PY_VERSION! (!PYTHON!)
 
-:: ── 2. 检查架构 ──
+:: -- 2. Check architecture --
 echo.
-echo [2/6] 检查运行环境...
+echo [2/6] Checking environment...
 
 for /f %%A in ('%PYTHON% -c "import struct; print(\"64-bit\" if struct.calcsize(\"P\")*8==64 else \"32-bit\")"') do set ARCH=%%A
 echo   [OK] !ARCH! Python
 
-:: ── 3. 创建/复用虚拟环境（不激活，直接用 %VPY%）──
+:: -- 3. Create/reuse virtualenv (not activated; use %VPY% directly) --
 echo.
-echo [3/6] 准备构建虚拟环境...
+echo [3/6] Preparing build virtualenv...
 
-:: 如果 venv 存在但 Python 版本不匹配，删除重建
+:: If a venv exists but its Python version differs, remove and recreate it.
 if exist "%VENV_DIR%\pyvenv.cfg" (
     for /f "tokens=1,2 delims== " %%A in ('findstr /b "version" "%VENV_DIR%\pyvenv.cfg"') do set VENV_VER=%%B
     set VENV_VER=!VENV_VER:~0,4!
     for /f "tokens=1,2 delims=." %%A in ("!PY_VERSION!") do set CUR_VER=%%A.%%B
     if "!VENV_VER!" neq "!CUR_VER!" (
-        echo   [INFO] 虚拟环境 Python !VENV_VER! 与当前 !CUR_VER! 不匹配，重建...
+        echo   [INFO] Virtualenv Python !VENV_VER! does not match current !CUR_VER!, rebuilding...
         rmdir /s /q "%VENV_DIR%" 2>nul
     )
 )
 
 if not exist "%VPY%" (
-    echo   创建构建虚拟环境...
+    echo   Creating build virtualenv...
     %PYTHON% -m venv "%VENV_DIR%"
     if !errorlevel! neq 0 (
-        echo   [FAIL] 创建虚拟环境失败
+        echo   [FAIL] Failed to create virtualenv
         pause
         exit /b 1
     )
-    echo   [OK] 虚拟环境已创建
+    echo   [OK] Virtualenv created
 ) else (
-    echo   [OK] 复用已有虚拟环境
+    echo   [OK] Reusing existing virtualenv
 )
 
-:: 升级 pip（显示输出；失败仅告警不中断，pip 通常仍可用）
-echo   升级 pip...
+:: Upgrade pip (show output; on failure only warn, do not abort - pip usually still works)
+echo   Upgrading pip...
 "%VPY%" -m pip install --upgrade pip
 if !errorlevel! neq 0 (
-    echo   [WARN] pip 升级失败，继续使用当前版本
+    echo   [WARN] pip upgrade failed, continuing with the current version
 )
 
-:: ── 4. 安装依赖 ──
+:: -- 4. Install dependencies --
 echo.
-echo [4/6] 安装依赖...
-echo   [INFO] 首次将下载 opencv / PySide6 / numpy 等，合计约数百 MB，
-echo          可能需要数分钟到十几分钟，请耐心等待。
-echo          屏幕会持续滚动下载进度；若长时间无任何输出才是异常。
+echo [4/6] Installing dependencies...
+echo   [INFO] First run downloads opencv / PySide6 / numpy etc. (hundreds of MB);
+echo          it may take several minutes. Download progress scrolls on screen.
+echo          Only worry if there is NO output for a long time.
 
 "%VPY%" -m pip install -r requirements.txt
 if !errorlevel! neq 0 (
     echo.
-    echo   [FAIL] 安装项目依赖失败
-    echo   常见原因: Python 版本过新，例如 3.14 缺少预编译轮子，
-    echo            报错形如 "from versions: none"，请改装 3.12 或 3.13。
+    echo   [FAIL] Failed to install project dependencies
+    echo   Common cause: Python is too new (e.g. 3.14) and lacks prebuilt wheels;
+    echo            the error looks like "from versions: none". Install 3.12/3.13.
     pause
     exit /b 1
 )
-echo   [OK] 项目依赖已安装
+echo   [OK] Project dependencies installed
 
-echo   安装 PyInstaller...
+echo   Installing PyInstaller...
 "%VPY%" -m pip install pyinstaller
 if !errorlevel! neq 0 (
-    echo   [FAIL] 安装 PyInstaller 失败
+    echo   [FAIL] Failed to install PyInstaller
     pause
     exit /b 1
 )
-:: 以模块方式取版本号，写入临时文件再读取，规避 for /f 内的引号转义
+:: Read the version via a temp file to avoid for/f quote-escaping headaches.
 "%VPY%" -m PyInstaller --version >"%TEMP%\adna_pyiver.txt" 2>nul
 set PYI_VER=
 if exist "%TEMP%\adna_pyiver.txt" set /p PYI_VER=<"%TEMP%\adna_pyiver.txt"
 del "%TEMP%\adna_pyiver.txt" >nul 2>&1
-echo   [OK] PyInstaller !PYI_VER! 已就绪
+echo   [OK] PyInstaller !PYI_VER! ready
 
-:: 检查 OCR 可选依赖
+:: Check the optional OCR dependency
 "%VPY%" -m pip show rapidocr_onnxruntime >nul 2>&1
 if !errorlevel! equ 0 (
-    echo   [OK] rapidocr_onnxruntime 已安装（含 OCR 支持）
+    echo   [OK] rapidocr_onnxruntime installed (OCR enabled)
 ) else (
-    echo   [INFO] rapidocr_onnxruntime 未安装，OCR 功能将降级
+    echo   [INFO] rapidocr_onnxruntime not installed, OCR will degrade gracefully
 )
 
-:: ── 5. 清理旧构建 ──
+:: -- 5. Clean previous build --
 echo.
-echo [5/6] 清理旧构建...
+echo [5/6] Cleaning previous build...
 if exist build rmdir /s /q build 2>nul
 if exist dist  rmdir /s /q dist  2>nul
 del /q *.spec 2>nul
-echo   [OK] 清理完成
+echo   [OK] Cleaned
 
-:: ── 6. 生成 spec 文件并打包 ──
+:: -- 6. Generate the spec file and build --
 echo.
-echo [6/6] 执行 PyInstaller 打包...
+echo [6/6] Running PyInstaller...
 echo.
 
-:: 生成 spec 文件（避免 cmd 行长度限制和转义问题）
-:: 关键:括号块 ( ... ) 内 echo 的每个 ( 和 ) 都必须转义为 ^( 和 ^)，
-:: 否则 cmd 逐字符数括号时配对失衡，会报 "( was unexpected" 并中止整个脚本。
+:: Generate the spec file (avoids cmd line-length limits and escaping issues).
+:: Key: every ( and ) inside the ( ... ) echo block MUST be escaped as ^( and ^),
+:: otherwise cmd's character-by-character parenthesis counting becomes unbalanced
+:: and it aborts with "( was unexpected".
 (
 echo # -*- mode: python ; coding: utf-8 -*-
 echo.
@@ -299,39 +309,39 @@ echo     name='%APP_NAME%',
 echo ^)
 ) > "%APP_NAME%.spec"
 
-:: 用 spec 文件打包（以模块方式调用，不依赖 activate）
+:: Build with the spec file (invoked as a module, no activate needed)
 "%VPY%" -m PyInstaller --noconfirm --clean "%APP_NAME%.spec" 2>&1
 
 if !errorlevel! neq 0 (
     echo.
-    echo   [FAIL] PyInstaller 打包失败，请检查上方错误信息。
+    echo   [FAIL] PyInstaller build failed; check the errors above.
     pause
     exit /b 1
 )
 
-:: 验证产出
+:: Verify output
 echo.
 if exist "dist\%APP_NAME%\%APP_NAME%.exe" (
     echo =========================================
-    echo   打包完成!
+    echo   Build complete!
     echo =========================================
     echo.
-    echo   [OK] 产出目录: dist\%APP_NAME%\
-    echo   [OK] 可执行文件: dist\%APP_NAME%\%APP_NAME%.exe
+    echo   [OK] Output dir: dist\%APP_NAME%\
+    echo   [OK] Executable: dist\%APP_NAME%\%APP_NAME%.exe
     echo.
-    echo   启动方式:
+    echo   To run:
     echo     dist\%APP_NAME%\%APP_NAME%.exe
     echo.
-    echo   分发方式:
-    echo     将 dist\%APP_NAME%\ 目录压缩为 .zip
+    echo   To distribute:
+    echo     zip the dist\%APP_NAME%\ folder
     echo.
 ) else (
-    echo   [FAIL] 打包后未找到预期产出 dist\%APP_NAME%\%APP_NAME%.exe
-    echo   请检查 dist\ 目录内容。
+    echo   [FAIL] Expected output not found: dist\%APP_NAME%\%APP_NAME%.exe
+    echo   Check the dist\ folder.
 )
 
 echo.
-echo   提示: 首次启动可能需要几秒钟初始化。
-echo   如遇 Windows Defender 误报，请选择 "仍要运行"。
+echo   Tip: first launch may take a few seconds to initialize.
+echo   If Windows Defender flags it, choose "Run anyway".
 echo.
 pause
