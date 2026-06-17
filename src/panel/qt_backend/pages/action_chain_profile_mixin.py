@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 from PySide6.QtWidgets import QFileDialog
@@ -9,6 +10,8 @@ from PySide6.QtWidgets import QFileDialog
 from src.panel.models.chain_model import ExecutorState
 from src.panel.pages.profile_ops_mixin import ProfileOpsMixin
 from src.utils.i18n import t
+
+logger = logging.getLogger(__name__)
 
 
 class QtActionChainProfileMixin(ProfileOpsMixin):
@@ -126,11 +129,17 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
             self._model.graph.loop_count = max(1, self._loop_count_spin.value())
 
     def _on_start(self):
-        self._sync_loop_config()
         try:
+            self._sync_loop_config()
             self._controller.start_chain()
         except ValueError as e:
+            # 用户可纠正的输入问题(如未添加步骤)→ 提示框
             self._show_warning(t("common.hint"), str(e))
+        except Exception as e:  # noqa: BLE001 — 启动路径任何异常都必须可见
+            # 关键: 绝不再静默吞掉。executor 缺失/服务未就绪/其它异常一律弹错误框 + 写日志,
+            # 否则在打包 exe(无控制台)中表现为「点启动完全无反应」无从排查。
+            logger.exception("启动动作链失败")
+            self._show_error(t("workflow.msg.start_failed"), str(e))
 
     def _on_pause(self):
         self._controller.pause_chain()
@@ -175,6 +184,51 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
         if hasattr(self, "_status_left"):
             self._status_left.setText(text)
 
+        status_state = state or ExecutorState.IDLE
+        if status_state == ExecutorState.RUNNING:
+            self._refresh_execution_status()
+            self._start_exec_tick()
+        else:
+            self._stop_exec_tick()
+            self._refresh_execution_status()
+
+    # ── 执行进度段(循环次数 / 当前步骤 / 执行时间)──────────────
+
+    def _refresh_execution_status(self) -> None:
+        """从执行器读值并刷新 3 个执行 QLabel。"""
+        executor = self.app.executor
+        if not executor:
+            return
+        from src.panel.execution_status import compose_execution_status
+
+        segs = compose_execution_status(executor, self._model.graph)
+        if hasattr(self, "_exec_loop_lbl"):
+            self._exec_loop_lbl.setText(segs.loop_text)
+        if hasattr(self, "_exec_step_lbl"):
+            self._exec_step_lbl.setText(segs.step_text)
+        if hasattr(self, "_exec_time_lbl"):
+            self._exec_time_lbl.setText(segs.time_text)
+
+    def _start_exec_tick(self) -> None:
+        """启动每秒轮询(仅 RUNNING 时持续)。"""
+        self._stop_exec_tick()
+        self._exec_tick_token = self.schedule(1000, self._exec_tick)
+
+    def _exec_tick(self) -> None:
+        self._exec_tick_token = None
+        self._refresh_execution_status()
+        if self._model.executor_state == ExecutorState.RUNNING:
+            self._exec_tick_token = self.schedule(1000, self._exec_tick)
+
+    def _stop_exec_tick(self) -> None:
+        token = getattr(self, "_exec_tick_token", None)
+        if token is not None:
+            try:
+                self._timer.cancel(token)
+            except Exception:  # noqa: BLE001 — token 失效无害
+                pass
+            self._exec_tick_token = None
+
     def _on_step_highlight(self, step_index=None, iteration=None, **_kw):
         if self._model.executor_state == ExecutorState.IDLE:
             return
@@ -183,20 +237,14 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
             if item:
                 self._step_tree.setCurrentItem(item)
             self._selected_step_idx = step_index
-        if step_index is not None and iteration is not None:
-            steps = self._model.get_steps()
-            msg = t("chain.status.running_step",
-                    step=step_index + 1, total=len(steps), round=iteration + 1)
-            if hasattr(self, "_status_label"):
-                self._status_label.setText(msg)
-            if hasattr(self, "_status_right"):
-                self._status_right.setText(msg)
+        self._refresh_execution_status()
 
     def _on_round_started(self, **_kw):
         if hasattr(self, "_step_tree") and self._step_tree:
             self._step_tree.clearSelection()
         if hasattr(self, "_selected_step_idx"):
             self._selected_step_idx = None
+        self._refresh_execution_status()
 
     def _on_region_changed(self, mode=None, rect=None, **_kw):
         if rect:

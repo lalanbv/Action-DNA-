@@ -6,6 +6,8 @@ MVC: WorkflowController/ChainModel 不变。
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel,
@@ -35,6 +37,8 @@ from src.panel.profile_manager import ProfileManager
 from src.panel.controllers.workflow_controller import WorkflowController
 from src.panel.models.chain_model import ChainModel, ExecutorState
 from src.utils.i18n import t
+
+logger = logging.getLogger(__name__)
 
 
 @register_page("workflow_editor", label_i18n=WORKFLOW_EDITOR_TITLE, desc_i18n=WORKFLOW_EDITOR_DESC, icon="🔧", category="main")
@@ -80,7 +84,8 @@ class QtWorkflowPage(
         )
         self._selected_node_id: str | None = None
         self._current_zoom: float = 1.0
-        self._ring_log = RingBufferLog(capacity=1000)
+        # 共享执行日志缓冲(与动作链页/桥接器/LoggingLayer 同一实例)。防御性回退防 None。
+        self._ring_log = self.app.ring_log or RingBufferLog(capacity=1000)
         self._debugger = Debugger()
         self._debugger.on_state_change(self._on_debugger_state_changed)
         self._debugger.on_breakpoint_hit(self._on_debugger_breakpoint_hit)
@@ -91,6 +96,7 @@ class QtWorkflowPage(
         self._palette_mode: str = "full"  # Literal["full", "hidden"]
         self._props_visible: bool = False
         self._log_visible: bool = True
+        self._exec_tick_token: int | None = None
 
     # ── 工具栏 ──────────────────────────────────────────────
 
@@ -280,6 +286,43 @@ class QtWorkflowPage(
         edges = len(graph.edges) if graph else 0
         self._status_left.setText(t("workflow.status.nodes_edges", nodes=nodes, edges=edges))
         self._status_right.setText(f"{self._current_zoom:.0%}")
+
+    # ── 执行进度段(循环次数 / 当前步骤 / 执行时间)──────────────
+
+    def _refresh_execution_status(self) -> None:
+        """从执行器读值并刷新 3 个执行 QLabel。"""
+        executor = self.app.executor
+        if not executor:
+            return
+        from src.panel.execution_status import compose_execution_status
+
+        segs = compose_execution_status(executor, self._model.graph)
+        if hasattr(self, "_exec_loop_lbl"):
+            self._exec_loop_lbl.setText(segs.loop_text)
+        if hasattr(self, "_exec_step_lbl"):
+            self._exec_step_lbl.setText(segs.step_text)
+        if hasattr(self, "_exec_time_lbl"):
+            self._exec_time_lbl.setText(segs.time_text)
+
+    def _start_exec_tick(self) -> None:
+        """启动每秒轮询(仅 RUNNING 时持续)。"""
+        self._stop_exec_tick()
+        self._exec_tick_token = self.schedule(1000, self._exec_tick)
+
+    def _exec_tick(self) -> None:
+        self._exec_tick_token = None
+        self._refresh_execution_status()
+        if self._model.executor_state == ExecutorState.RUNNING:
+            self._exec_tick_token = self.schedule(1000, self._exec_tick)
+
+    def _stop_exec_tick(self) -> None:
+        token = getattr(self, "_exec_tick_token", None)
+        if token is not None:
+            try:
+                self._timer.cancel(token)
+            except Exception:  # noqa: BLE001 — token 失效无害
+                pass
+            self._exec_tick_token = None
 
     # ── 面板切换 ──────────────────────────────────────────────
 
@@ -537,7 +580,9 @@ class QtWorkflowPage(
             self._model.graph.loop = self._loop_combo.currentData() != "single"
             self._model.graph.loop_count = self._qt_loop_count()
             self._controller.start_chain()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — 启动路径任何异常都必须可见(含 executor 未就绪)
+            # 弹错误框 + 写日志,避免打包 exe 无控制台时静默失败无从排查。
+            logger.exception("启动工作流失败")
             self._show_error(t("workflow.msg.start_failed"), str(e))
 
     def _on_pause(self):
@@ -595,10 +640,19 @@ class QtWorkflowPage(
             resume.setEnabled(paused)
             stop.setEnabled(active)
 
+        # 执行进度段
+        if running:
+            self._refresh_execution_status()
+            self._start_exec_tick()
+        else:
+            self._stop_exec_tick()
+            self._refresh_execution_status()
+
     def _on_node_highlight(self, node_id=None, **_kwargs):
         if self._model.executor_state != ExecutorState.RUNNING:
             return
         self._canvas.highlight_node(node_id)
+        self._refresh_execution_status()
 
     def _on_monitors_changed(self, **_kwargs):
         self._refresh_monitor_list()

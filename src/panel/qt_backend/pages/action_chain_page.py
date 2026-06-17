@@ -71,8 +71,10 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
             event_bus=bus,
             main_thread_schedule=self.schedule,
         )
-        self._ring_log = RingBufferLog(capacity=1000)
+        # 共享执行日志缓冲(与工作流页/桥接器/LoggingLayer 同一实例)。防御性回退防 None。
+        self._ring_log = self.app.ring_log or RingBufferLog(capacity=1000)
         self._selected_step_idx: int | None = None
+        self._exec_tick_token: int | None = None
 
     # ── 样式辅助 ──────────────────────────────────────────────
 
