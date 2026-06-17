@@ -84,6 +84,17 @@ class QtBasePage(ThemeCallbackMixin, QWidget):
         self._status_right.setObjectName("dnaStatusLabel")
         h.addWidget(self._status_left)
 
+        # 执行进度 3 段(紧随左侧信息,走全局 QSS)
+        self._exec_loop_lbl = QLabel("")
+        self._exec_loop_lbl.setObjectName("dnaStatusLabel")
+        self._exec_step_lbl = QLabel("")
+        self._exec_step_lbl.setObjectName("dnaStatusLabel")
+        self._exec_time_lbl = QLabel("")
+        self._exec_time_lbl.setObjectName("dnaStatusLabel")
+        h.addWidget(self._exec_loop_lbl)
+        h.addWidget(self._exec_step_lbl)
+        h.addWidget(self._exec_time_lbl)
+
         if center_label:
             h.addStretch()
             self._status_center = QLabel("")
