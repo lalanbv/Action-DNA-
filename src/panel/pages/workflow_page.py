@@ -74,7 +74,9 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         )
         self._selected_node_id: str | None = None
         self._current_zoom: float = 1.0
-        self._ring_log = RingBufferLog(capacity=1000)
+        # 共享执行日志缓冲:与动作链页/桥接器/LoggingLayer 同一实例,导航后历史仍在。
+        # 防御性回退:轻量服务理论上在 __init__ 即注册,但保留本地实例防 None 崩溃。
+        self._ring_log = self.app.ring_log or RingBufferLog(capacity=1000)
         self._debugger = Debugger()
         self._debugger.on_state_change(self._on_debugger_state_changed)
         self._debugger.on_breakpoint_hit(self._on_debugger_breakpoint_hit)
@@ -230,6 +232,11 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
 
         # 底部区域：从下往上 pack（StatusBar 最底，MonitorWidget 在上，分隔线最上）
         self._status_bar = StatusBar(self.frame)
+        # 执行进度 3 段(排在圆点之后)
+        self._status_bar.insert_segment(1, "exec_loop", "")
+        self._status_bar.insert_segment(2, "exec_step", "")
+        self._status_bar.insert_segment(3, "exec_time", "")
+        self._exec_tick_id: str | None = None
         self._status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         self._monitor_widget = MonitorStatusWidget(self.frame)
         self._monitor_widget.pack(fill=tk.X, side=tk.BOTTOM)
@@ -350,6 +357,40 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
             self._status_bar.set_hotkey_info(self.app.hotkey_manager)
         else:
             self._status_bar.set_right(zoom_text)
+
+    # ── 执行进度段(循环次数 / 当前步骤 / 执行时间)──────────────
+
+    def _refresh_execution_status(self) -> None:
+        """从执行器读值并刷新状态栏 3 个执行段。"""
+        executor = self.app.executor
+        if not executor or not getattr(self, "_status_bar", None):
+            return
+        from src.panel.execution_status import compose_execution_status
+
+        segs = compose_execution_status(executor, self._model.graph)
+        self._status_bar.set_segment("exec_loop", segs.loop_text)
+        self._status_bar.set_segment("exec_step", segs.step_text)
+        self._status_bar.set_segment("exec_time", segs.time_text)
+
+    def _start_exec_tick(self) -> None:
+        """启动每秒轮询(仅 RUNNING 时持续)。"""
+        self._stop_exec_tick()
+        self._exec_tick_id = self.frame.after(1000, self._exec_tick)
+
+    def _exec_tick(self) -> None:
+        self._exec_tick_id = None
+        self._refresh_execution_status()
+        if self._model.executor_state == ExecutorState.RUNNING:
+            self._exec_tick_id = self.frame.after(1000, self._exec_tick)
+
+    def _stop_exec_tick(self) -> None:
+        tick_id = getattr(self, "_exec_tick_id", None)
+        if tick_id is not None:
+            try:
+                self.frame.after_cancel(tick_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._exec_tick_id = None
 
     # ── 主区域 ──────────────────────────────────────────────
 
@@ -534,10 +575,19 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         for btn in self._palette_btn_widgets:
             btn.configure(state=btn_state)
 
+        # 执行进度段
+        if running:
+            self._refresh_execution_status()
+            self._start_exec_tick()
+        else:
+            self._stop_exec_tick()
+            self._refresh_execution_status()
+
     def _on_node_highlight(self, node_id=None, **_kwargs):
         if self._model.executor_state != ExecutorState.RUNNING:
             return
         self._canvas.highlight_node(node_id)
+        self._refresh_execution_status()
 
     def _on_monitors_changed(self, **_kwargs):
         self._refresh_monitor_list()
@@ -666,6 +716,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._root_bindings = []
 
     def destroy(self):
+        self._stop_exec_tick()
         self._cleanup_prop_vars()
         if hasattr(self, "_canvas"):
             self._canvas.destroy_canvas()
