@@ -75,6 +75,19 @@ class StatusBar(tk.Frame):
         self._segment_labels[name] = label
         return label
 
+    def insert_segment(self, index: int, name: str, text: str = "") -> tk.Label:
+        """在指定位置插入一个独立信息段(控制显示顺序)。
+
+        插入后触发重排。常用于把执行进度段排在圆点(index=1)之后。
+        """
+        th = current_theme()
+        label = themed_label(self._content, text=text, style="small", bg=th.toolbar_bg)
+        self._segments.insert(index, ("label", label))
+        self._segment_labels[name] = label
+        # 失效缓存宽度,触发下次 _perform_reflow 重排
+        self._last_width = -1
+        return label
+
     def set_segment(self, name: str, text: str) -> None:
         """更新指定信息段文本。"""
         if name in self._segment_labels:
