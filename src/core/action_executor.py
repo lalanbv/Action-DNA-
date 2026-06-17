@@ -19,13 +19,16 @@ from src.core.step_types import (
     StartTimerStep,
 )
 from src.core.condition import ConditionEvaluator
+from src.core.debug.ring_buffer_log import RingBufferLog
 from src.core.engine.execution_context import ExecutionContext
 from src.core.engine.graph_engine import GraphEngine, GraphEngineConfig
+from src.core.execution_timer import ExecutionTimer
 from src.core.events import TypedEventBus
 from src.core.events.event_names import EventName
 from src.core.flow import FlowGraph, FlowNode, NodeType
 from src.core.layers.debug_screenshot_layer import DebugScreenshotLayer
 from src.core.layers.event_bridge_layer import EventBridgeLayer
+from src.core.layers.logging_layer import LoggingLayer
 from src.core.layers.pause_layer import PauseLayer
 from src.core.logger import LOG_DIR, log
 from src.core.monitor import MonitorConfig
@@ -59,11 +62,13 @@ class ActionExecutor:
         input_ctrl,
         event_bus: TypedEventBus | None = None,
         max_consecutive_failures: int = 5,
+        ring_log: RingBufferLog | None = None,
     ):
         self.capture = capture
         self.matcher = matcher
         self.input = input_ctrl
         self._event_bus = event_bus
+        self._ring_log = ring_log
         self._thread: threading.Thread | None = None
         self._evaluator: ConditionEvaluator | None = None
         self._monitor_manager: MonitorManager | None = None
@@ -76,6 +81,10 @@ class ActionExecutor:
         self._current_step_idx = -1
         self._loop_iteration = 0
         self._running = False
+
+        # 执行进度(活跃计时 + 已完成回合)
+        self._timer = ExecutionTimer()
+        self._completed_rounds: int = 0
 
         # 主线程调度器（由 PanelApp 注入 frame.after）
         self._schedule_main = None
@@ -93,6 +102,10 @@ class ActionExecutor:
         )
         self._debug_layer = DebugScreenshotLayer(capture=capture, log_dir=LOG_DIR)
         self._pause_layer = PauseLayer()
+        # LoggingLayer 最外层(OBSERVE 优先级自动排序):把节点开始/完成/异常、
+        # 图开始/结束写入共享 ring_log,供执行日志面板实时显示。
+        self._logging_layer = LoggingLayer(ring_log=self._ring_log)
+        self._graph_engine.add_layer(self._logging_layer)
         self._graph_engine.add_layer(self._pause_layer)
         self._graph_engine.add_layer(self._event_bridge)
         self._graph_engine.add_layer(self._debug_layer)
@@ -140,6 +153,17 @@ class ActionExecutor:
             return self._loop_iteration
 
     @property
+    def elapsed_active(self) -> float | None:
+        """活跃执行秒数(排除暂停);未启动返回 None。"""
+        return self._timer.elapsed()
+
+    @property
+    def completed_rounds(self) -> int:
+        """已完整跑完的回合数。"""
+        with self._lock:
+            return self._completed_rounds
+
+    @property
     def last_graph(self) -> FlowGraph | None:
         return self._last_graph
 
@@ -162,8 +186,10 @@ class ActionExecutor:
             self._pause_event.clear()
             self._current_step_idx = -1
             self._loop_iteration = 0
+            self._completed_rounds = 0
             self._running = True
 
+        self._timer.start()
         self._evaluator = ConditionEvaluator(self.capture, self.matcher)
 
         self._last_graph = graph
@@ -187,6 +213,7 @@ class ActionExecutor:
         with self._lock:
             self._gen += 1
             self._running = False
+        self._timer.stop()
         self._last_graph = None
         self._stop_monitors()
         self._sleep_guard.stop()
@@ -200,11 +227,13 @@ class ActionExecutor:
 
     def pause(self) -> None:
         self._pause_event.set()
+        self._timer.pause()
         log.info(t("executor.log.paused"))
         self._emit(EventName.EXECUTOR_PAUSED)
 
     def resume(self) -> None:
         self._pause_event.clear()
+        self._timer.resume()
         self._pause_layer.resume()
         log.info(t("executor.log.resumed"))
         self._emit(EventName.EXECUTOR_RESUMED)
@@ -228,9 +257,10 @@ class ActionExecutor:
 
                 self._graph_engine.run(graph, ctx)
 
-                # 轮次成功 → 重置连续失败计数
+                # 轮次成功 → 重置连续失败计数 + 已完成回合 +1
                 with self._lock:
                     self._consecutive_failures = 0
+                    self._completed_rounds += 1
 
                 iteration += 1
 
@@ -247,12 +277,13 @@ class ActionExecutor:
             log.exception(t("executor.log.execution_exception"))
         finally:
             self._stop_monitors()
+            self._timer.stop()
             with self._lock:
                 if self._gen == gen:
                     self._current_step_idx = -1
                     self._running = False
             log.info(t("executor.log.execution_finished", rounds=iteration))
-            self._emit(EventName.EXECUTOR_FINISHED)
+            self._emit(EventName.EXECUTOR_FINISHED, rounds=iteration)
 
     def record_failure(self) -> None:
         """记录一次节点失败，超过阈值时自动停止。"""

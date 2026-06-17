@@ -288,3 +288,63 @@ class TestAlive:
         ex = _make_executor()
         ex._stop_event.clear()
         assert ex._alive(gen=ex._gen + 1) is False
+
+
+class TestExecutionProgress:
+    """验证 timer 接线 + completed_rounds 精确计数。"""
+
+    def test_initial_completed_rounds_and_elapsed(self) -> None:
+        ex = _make_executor()
+        assert ex.completed_rounds == 0
+        assert ex.elapsed_active is None
+
+    def test_start_resets_rounds_and_starts_timer(self) -> None:
+        ex = _make_executor()
+        with patch.object(ex._timer, "start") as timer_start, \
+             patch.object(threading, "Thread"):
+            ex.start(_make_graph())
+        timer_start.assert_called_once()
+        assert ex.completed_rounds == 0
+
+    def test_pause_resume_stop_wire_timer(self) -> None:
+        ex = _make_executor()
+        with patch.object(threading, "Thread"):
+            ex.start(_make_graph())
+        with patch.object(ex._timer, "pause") as m_pause:
+            ex.pause()
+            m_pause.assert_called_once()
+        with patch.object(ex._timer, "resume") as m_resume:
+            ex.resume()
+            m_resume.assert_called_once()
+        with patch.object(ex._timer, "stop") as m_stop:
+            ex.stop()
+            m_stop.assert_called_once()
+
+    def test_completed_rounds_increments_per_round(self, monkeypatch) -> None:
+        ex = _make_executor()
+        graph = _make_graph()
+        graph.loop = False  # 单次,跑一圈即退出
+        ex._gen = 1
+        ex._stop_event.clear()
+        # 避免 GraphEngine 真实执行节点,直接 mock 为空操作
+        monkeypatch.setattr(ex._graph_engine, "run", lambda g, c, *a, **kw: None)
+        ex._run_with_engine(graph, 1)
+        assert ex.completed_rounds == 1
+
+    def test_completed_rounds_increments_multiple_rounds(self, monkeypatch) -> None:
+        ex = _make_executor()
+        graph = _make_graph()
+        graph.loop = True
+        graph.loop_count = 3
+        ex._gen = 1
+        ex._stop_event.clear()
+        monkeypatch.setattr(ex._graph_engine, "run", lambda g, c, *a, **kw: None)
+        ex._run_with_engine(graph, 1)
+        assert ex.completed_rounds == 3
+
+    def test_elapsed_active_not_none_after_start(self) -> None:
+        ex = _make_executor()
+        with patch.object(threading, "Thread"):
+            ex.start(_make_graph())
+        assert ex.elapsed_active is not None
+        ex.stop()
