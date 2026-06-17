@@ -194,9 +194,9 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
         # 执行进度段: 启停 tick + 刷新
         if status_state == ExecutorState.RUNNING:
             self._refresh_execution_status()
-            self._start_exec_tick()
+            self._exec_ticker.start()
         else:
-            self._stop_exec_tick()
+            self._exec_ticker.stop()
             self._refresh_execution_status()
 
     # ── 执行进度段(循环次数 / 当前步骤 / 执行时间)──────────────
@@ -212,26 +212,6 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
         self.status_bar.set_segment("exec_loop", segs.loop_text)
         self.status_bar.set_segment("exec_step", segs.step_text)
         self.status_bar.set_segment("exec_time", segs.time_text)
-
-    def _start_exec_tick(self) -> None:
-        """启动每秒轮询(仅 RUNNING 时持续)。"""
-        self._stop_exec_tick()
-        self._exec_tick_id = self.frame.after(1000, self._exec_tick)
-
-    def _exec_tick(self) -> None:
-        self._exec_tick_id = None
-        self._refresh_execution_status()
-        if self.model.executor_state == ExecutorState.RUNNING:
-            self._exec_tick_id = self.frame.after(1000, self._exec_tick)
-
-    def _stop_exec_tick(self) -> None:
-        tick_id = getattr(self, "_exec_tick_id", None)
-        if tick_id is not None:
-            try:
-                self.frame.after_cancel(tick_id)
-            except (tk.TclError, ValueError):
-                pass
-            self._exec_tick_id = None
 
     def _on_step_highlight(self, step_index=None, iteration=None, **_kw):
         if self.model.executor_state == ExecutorState.IDLE:
@@ -272,7 +252,7 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
                     self.step_ring.highlight(step_idx)
         self._refresh_execution_status()
         if state == ExecutorState.RUNNING:
-            self._start_exec_tick()
+            self._exec_ticker.start()
 
     # ── 监控器操作 ──
 

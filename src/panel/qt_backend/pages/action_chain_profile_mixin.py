@@ -187,9 +187,9 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
         status_state = state or ExecutorState.IDLE
         if status_state == ExecutorState.RUNNING:
             self._refresh_execution_status()
-            self._start_exec_tick()
+            self._exec_ticker.start()
         else:
-            self._stop_exec_tick()
+            self._exec_ticker.stop()
             self._refresh_execution_status()
 
     # ── 执行进度段(循环次数 / 当前步骤 / 执行时间)──────────────
@@ -208,26 +208,6 @@ class QtActionChainProfileMixin(ProfileOpsMixin):
             self._exec_step_lbl.setText(segs.step_text)
         if hasattr(self, "_exec_time_lbl"):
             self._exec_time_lbl.setText(segs.time_text)
-
-    def _start_exec_tick(self) -> None:
-        """启动每秒轮询(仅 RUNNING 时持续)。"""
-        self._stop_exec_tick()
-        self._exec_tick_token = self.schedule(1000, self._exec_tick)
-
-    def _exec_tick(self) -> None:
-        self._exec_tick_token = None
-        self._refresh_execution_status()
-        if self._model.executor_state == ExecutorState.RUNNING:
-            self._exec_tick_token = self.schedule(1000, self._exec_tick)
-
-    def _stop_exec_tick(self) -> None:
-        token = getattr(self, "_exec_tick_token", None)
-        if token is not None:
-            try:
-                self._timer.cancel(token)
-            except Exception:  # noqa: BLE001 — token 失效无害
-                pass
-            self._exec_tick_token = None
 
     def _on_step_highlight(self, step_index=None, iteration=None, **_kw):
         if self._model.executor_state == ExecutorState.IDLE:

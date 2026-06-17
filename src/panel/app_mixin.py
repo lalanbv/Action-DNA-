@@ -29,6 +29,24 @@ class ServiceProviderMixin:
     def _try_get(self, svc_type: type):
         return self._container.try_get(svc_type)
 
+    def _safe_get_service(self, svc_type: type):
+        """安全获取服务: 工厂实例化失败时返回 None 而非抛异常。
+
+        用于分阶段服务初始化的降级路径 —— 某个重型服务(如 Windows exe 下的
+        ScreenCapture)工厂抛异常时,不应拖垮整个初始化链。``try_get`` 仅在「未注册」
+        时返回 None;已注册但工厂失败仍会抛。此包装确保降级场景下拿到 None,
+        让后续阶段(executor 注册)能继续。
+        """
+        try:
+            return self._container.try_get(svc_type)
+        except Exception:  # noqa: BLE001 — 降级: 工厂失败返回 None
+            logger.debug(
+                "服务获取失败(降级为 None): %s",
+                getattr(svc_type, "__name__", svc_type),
+                exc_info=True,
+            )
+            return None
+
     @property
     def event_bus(self):
         from src.core.events.bus import TypedEventBus
@@ -38,6 +56,12 @@ class ServiceProviderMixin:
     def executor(self):
         from src.core.action_executor import ActionExecutor
         return self._container.try_get(ActionExecutor)
+
+    @property
+    def ring_log(self):
+        """共享执行日志缓冲(单例)。tkinter/Qt 双后端与所有页面共用同一实例。"""
+        from src.core.debug.ring_buffer_log import RingBufferLog
+        return self._container.try_get(RingBufferLog)
 
     @property
     def capture(self):

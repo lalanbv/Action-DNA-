@@ -123,7 +123,14 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         self.status_bar.insert_segment(1, "exec_loop", "")
         self.status_bar.insert_segment(2, "exec_step", "")
         self.status_bar.insert_segment(3, "exec_time", "")
-        self._exec_tick_id: str | None = None
+        # 执行进度轮询器: 每秒刷新 3 段(仅 RUNNING 时持续)。
+        from src.panel.execution_status import ExecutionStatusTicker
+        self._exec_ticker = ExecutionStatusTicker(
+            schedule=self.frame.after,
+            cancel=self.frame.after_cancel,
+            refresh=self._refresh_execution_status,
+            is_running=lambda: self.model.executor_state == ExecutorState.RUNNING,
+        )
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
         self.step_ring = StepRing(self.tree)
@@ -170,7 +177,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         pass
 
     def destroy(self):
-        self._stop_exec_tick()
+        self._exec_ticker.stop()
         if self.controller:
             self.controller.destroy()
         super().destroy()

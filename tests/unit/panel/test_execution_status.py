@@ -53,6 +53,18 @@ class TestCountReachableActionNodes:
         g.nodes["a0"].action = None
         assert count_reachable_action_nodes(g) == 1
 
+    def test_excludes_unreachable_action_node(self) -> None:
+        """回归守卫: 从 START 不可达的孤立 ACTION 节点不计入总数。
+
+        count_reachable_action_nodes 依赖 ordered_nodes() 的 DFS(从 start_node_id 出发),
+        故无边连接的孤立节点必须被排除 —— 否则状态栏"当前步骤: x/y"的 y 会虚高,
+        永远跑不到总数。
+        """
+        g = _make_action_graph(3)  # START → a0 → a1 → a2 → END(线性,全部可达)
+        # 孤立 ACTION 节点: 无任何边连接,从 START 的 DFS 不可达
+        g.add_node(FlowNode("orphan", NodeType.ACTION, action=SimpleNamespace()))
+        assert count_reachable_action_nodes(g) == 3
+
 
 class TestBuildExecutionSegments:
     def test_infinite_loop(self) -> None:

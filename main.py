@@ -122,9 +122,52 @@ def _qt_cocoa_active() -> bool:
     return app is not None and app.platformName() != "offscreen"
 
 
+def _install_crash_diagnostics() -> None:
+    """安装全局异常钩子,把未捕获异常写入日志文件。
+
+    打包 exe 没有控制台,Qt/Tk 槽或后台线程里未捕获的异常会静默丢失,表现为
+    「点启动完全无反应」却无任何报错。这里把主线程与子线程的未捕获异常统一写入
+    项目的 daily log file (assets/logs/YYYY-MM-DD.log),让用户/开发者有据可查。
+
+    覆盖:
+    - sys.excepthook: 主线程顶层未捕获异常。
+    - threading.excepthook: 子线程未捕获异常(如执行器线程)。
+    """
+    import threading
+
+    def _log_exception(exc_type, exc_value, exc_tb) -> None:
+        # 钩子内绝不再抛,否则会递归崩溃
+        try:
+            from src.core.logger import log
+            if issubclass(exc_type, Exception):
+                log.exception(
+                    "未捕获的异常(主线程)", exc_info=(exc_type, exc_value, exc_tb)
+                )
+            else:
+                log.critical(
+                    "未捕获的致命异常(主线程): %s: %s", exc_type.__name__, exc_value
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _log_thread_exception(args) -> None:
+        try:
+            from src.core.logger import log
+            log.exception(
+                "未捕获的异常(线程 %s)", getattr(args.thread, "name", "?"),
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    sys.excepthook = _log_exception
+    threading.excepthook = _log_thread_exception
+
+
 def main():
     try:
         _setup()
+        _install_crash_diagnostics()
 
         # Preload heavy C extensions (cv2, mss, numpy, pyautogui, pynput)
         # in background while UI starts — modules land in sys.modules so
@@ -176,7 +219,16 @@ def main():
         tb = traceback.format_exc()
         _show_fatal_error("Action<DNA> 启动失败", tb)
         if IS_FROZEN:
-            input("按回车键退出...")
+            # windowed 打包（console=False）：_show_fatal_error 已弹 MessageBox
+            # 阻塞至用户确认，且无控制台可读取 —— input() 会抛 EOFError（stdin
+            # 为 EOF），该 EOFError 曾穿透为顶层崩溃并掩盖真正原因。仅当存在
+            # 真实交互终端（console=True 构建 / 调试场景，sys.stdin.isatty()）
+            # 才暂停等待按键，否则直接退出。
+            if sys.stdin and sys.stdin.isatty():
+                try:
+                    input("按回车键退出...")
+                except (EOFError, OSError):
+                    pass
             sys.exit(1)
         raise
 

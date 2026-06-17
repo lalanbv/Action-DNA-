@@ -34,7 +34,9 @@ LabelButton = None  # type: ignore[assignment]
 
 def themed_frame(parent: tk.Misc, **kw: Any) -> tk.Frame:
     t = current_theme()
-    kw.setdefault("bg", t.page_bg)
+    # 继承父控件背景,避免放置于 themed_labelframe(card_bg) 内时出现 page_bg(黑)色块。
+    # 与 themed_label 行为保持一致(例如设置页「外观设置」单选按钮容器行)。
+    kw.setdefault("bg", _inherit_bg(parent, t.page_bg))
     return tk.Frame(parent, **kw)
 
 
@@ -226,8 +228,15 @@ _WIDGET_THEME_MAP: dict[str, dict[str, str]] = {
     "Spinbox": {"bg": "input_bg", "fg": "input_fg"},
     "Checkbutton": {"bg": "page_bg", "fg": "text_primary", "selectcolor": "input_bg"},
     "Radiobutton": {"bg": "page_bg", "fg": "text_primary", "selectcolor": "input_bg"},
-    "LabelFrame": {"bg": "card_bg", "fg": "text_primary"},
+    # 注意: 键必须是 winfo_class() 的实际返回值。tk.LabelFrame 返回 'Labelframe'
+    # (小写 f),写成 'LabelFrame' 会导致主题切换时整个 LabelFrame 被跳过不刷新。
+    "Labelframe": {"bg": "card_bg", "fg": "text_primary"},
     "Toplevel": {"bg": "dialog_bg"},
+    # 内容区原生控件 —— Listbox/Text 默认背景是系统色(systemTextBackgroundColor，
+    # macOS 下为浅色)，主题切换时必须刷新，否则深色模式下保留浅色色块。
+    # 令牌取值与各处创建时一致：Listbox 用 bg_surface，Text 用 input_bg/input_fg。
+    "Listbox": {"bg": "bg_surface", "fg": "text_primary", "selectbackground": "accent_blue", "selectforeground": "text_on_accent"},
+    "Text": {"bg": "input_bg", "fg": "input_fg", "insertbackground": "text_primary", "selectbackground": "accent_blue", "selectforeground": "text_on_accent"},
 }
 
 _SKIP_WIDGETS = {"Canvas", "Treeview", "Scrollbar"}
@@ -255,7 +264,10 @@ def apply_theme_recursive(widget: tk.Widget, theme: CanvasTheme) -> None:
                 attr: getattr(theme, token)
                 for attr, token in _WIDGET_THEME_MAP[wclass].items()
             }
-            if wclass == "Label":
+            # Label/Frame 均需继承父控件背景: 放置于 themed_labelframe(card_bg)
+            # 内的 Frame 若被强制刷成 page_bg,会在深色卡片内出现黑色底色块
+            # (典型: 设置页「外观设置」单选按钮容器行)。其余控件沿用令牌映射值。
+            if wclass in ("Label", "Frame"):
                 parent = widget.nametowidget(widget.winfo_parent())
                 cfg["bg"] = _inherit_bg(parent, theme.page_bg)
             widget.configure(**cfg)

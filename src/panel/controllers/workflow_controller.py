@@ -242,6 +242,7 @@ class WorkflowController(BaseController):
     # ── 执行控制 ──────────────────────────────────────────
 
     def start_chain(self) -> None:
+        self._require_executor()
         if self._executor.is_running:
             return
         if not self.model.graph.nodes:

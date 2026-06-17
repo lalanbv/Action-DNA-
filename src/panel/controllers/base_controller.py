@@ -62,6 +62,19 @@ class BaseController(ABC):
         if self._executor.is_running:
             raise RuntimeError(t("panel.exc.executor_running_no_modify"))
 
+    def _require_executor(self) -> None:
+        """启动前置校验: 执行器必须已就绪(非 None)。
+
+        背景: Windows 打包 exe 中,若分阶段服务初始化失败(action_executor 未注册),
+        页面构建时拿到的 executor 为 None。若不显式拦截,start_chain 会直接访问
+        ``self._executor.is_running`` 抛出 ``AttributeError`` —— 该异常会被 Qt/Tk 的
+        按钮槽静默吞掉(打包 exe 无控制台),用户表现为「点启动完全无反应」且无任何报错。
+        此处转换为带可读消息的 RuntimeError,由 ``_on_start`` 捕获后弹出错误框,
+        把静默失败变成可见反馈。
+        """
+        if self._executor is None:
+            raise RuntimeError(t("panel.exc.executor_not_ready"))
+
     # ── 监控器管理 ──────────────────────────────────────────
 
     def add_monitor(self, monitor: MonitorConfig) -> None:

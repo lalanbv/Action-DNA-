@@ -236,7 +236,14 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._status_bar.insert_segment(1, "exec_loop", "")
         self._status_bar.insert_segment(2, "exec_step", "")
         self._status_bar.insert_segment(3, "exec_time", "")
-        self._exec_tick_id: str | None = None
+        # 执行进度轮询器: 每秒刷新 3 段(仅 RUNNING 时持续)。
+        from src.panel.execution_status import ExecutionStatusTicker
+        self._exec_ticker = ExecutionStatusTicker(
+            schedule=self.frame.after,
+            cancel=self.frame.after_cancel,
+            refresh=self._refresh_execution_status,
+            is_running=lambda: self._model.executor_state == ExecutorState.RUNNING,
+        )
         self._status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         self._monitor_widget = MonitorStatusWidget(self.frame)
         self._monitor_widget.pack(fill=tk.X, side=tk.BOTTOM)
@@ -371,26 +378,6 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._status_bar.set_segment("exec_loop", segs.loop_text)
         self._status_bar.set_segment("exec_step", segs.step_text)
         self._status_bar.set_segment("exec_time", segs.time_text)
-
-    def _start_exec_tick(self) -> None:
-        """启动每秒轮询(仅 RUNNING 时持续)。"""
-        self._stop_exec_tick()
-        self._exec_tick_id = self.frame.after(1000, self._exec_tick)
-
-    def _exec_tick(self) -> None:
-        self._exec_tick_id = None
-        self._refresh_execution_status()
-        if self._model.executor_state == ExecutorState.RUNNING:
-            self._exec_tick_id = self.frame.after(1000, self._exec_tick)
-
-    def _stop_exec_tick(self) -> None:
-        tick_id = getattr(self, "_exec_tick_id", None)
-        if tick_id is not None:
-            try:
-                self.frame.after_cancel(tick_id)
-            except (tk.TclError, ValueError):
-                pass
-            self._exec_tick_id = None
 
     # ── 主区域 ──────────────────────────────────────────────
 
@@ -578,9 +565,9 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         # 执行进度段
         if running:
             self._refresh_execution_status()
-            self._start_exec_tick()
+            self._exec_ticker.start()
         else:
-            self._stop_exec_tick()
+            self._exec_ticker.stop()
             self._refresh_execution_status()
 
     def _on_node_highlight(self, node_id=None, **_kwargs):
@@ -716,7 +703,7 @@ class WorkflowPage(ProfileOpsMixin, WorkflowPaletteMixin, WorkflowPropertiesMixi
         self._root_bindings = []
 
     def destroy(self):
-        self._stop_exec_tick()
+        self._exec_ticker.stop()
         self._cleanup_prop_vars()
         if hasattr(self, "_canvas"):
             self._canvas.destroy_canvas()

@@ -96,7 +96,17 @@ class QtWorkflowPage(
         self._palette_mode: str = "full"  # Literal["full", "hidden"]
         self._props_visible: bool = False
         self._log_visible: bool = True
-        self._exec_tick_token: int | None = None
+        # 执行进度轮询器: 每秒刷新 3 段(仅 RUNNING 时持续)。状态栏标签在基类 base_page 构建。
+        # 直达底层 _timer.schedule(绕过 self.schedule)——后者会把每个 token 追加进
+        # _timer_ids 且永不修剪,每秒 re-arm 会让该列表无限增长。ticker 自管单个 token,
+        # destroy_page 时显式 stop() 清理,无需 page 跟踪。
+        from src.panel.execution_status import ExecutionStatusTicker
+        self._exec_ticker = ExecutionStatusTicker(
+            schedule=self._timer.schedule,
+            cancel=self._timer.cancel,
+            refresh=self._refresh_execution_status,
+            is_running=lambda: self._model.executor_state == ExecutorState.RUNNING,
+        )
 
     # ── 工具栏 ──────────────────────────────────────────────
 
@@ -303,26 +313,6 @@ class QtWorkflowPage(
             self._exec_step_lbl.setText(segs.step_text)
         if hasattr(self, "_exec_time_lbl"):
             self._exec_time_lbl.setText(segs.time_text)
-
-    def _start_exec_tick(self) -> None:
-        """启动每秒轮询(仅 RUNNING 时持续)。"""
-        self._stop_exec_tick()
-        self._exec_tick_token = self.schedule(1000, self._exec_tick)
-
-    def _exec_tick(self) -> None:
-        self._exec_tick_token = None
-        self._refresh_execution_status()
-        if self._model.executor_state == ExecutorState.RUNNING:
-            self._exec_tick_token = self.schedule(1000, self._exec_tick)
-
-    def _stop_exec_tick(self) -> None:
-        token = getattr(self, "_exec_tick_token", None)
-        if token is not None:
-            try:
-                self._timer.cancel(token)
-            except Exception:  # noqa: BLE001 — token 失效无害
-                pass
-            self._exec_tick_token = None
 
     # ── 面板切换 ──────────────────────────────────────────────
 
@@ -643,9 +633,9 @@ class QtWorkflowPage(
         # 执行进度段
         if running:
             self._refresh_execution_status()
-            self._start_exec_tick()
+            self._exec_ticker.start()
         else:
-            self._stop_exec_tick()
+            self._exec_ticker.stop()
             self._refresh_execution_status()
 
     def _on_node_highlight(self, node_id=None, **_kwargs):
@@ -764,6 +754,9 @@ class QtWorkflowPage(
             self._update_status_bar()
 
     def destroy_page(self) -> None:
+        # 先停 ticker:它直达底层调度器,token 不在 _timer_ids 里,需显式取消。
+        if hasattr(self, "_exec_ticker"):
+            self._exec_ticker.stop()
         if hasattr(self, "_canvas"):
             self._canvas.destroy_canvas()
         if hasattr(self, "_controller"):

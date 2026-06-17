@@ -74,7 +74,17 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         # 共享执行日志缓冲(与工作流页/桥接器/LoggingLayer 同一实例)。防御性回退防 None。
         self._ring_log = self.app.ring_log or RingBufferLog(capacity=1000)
         self._selected_step_idx: int | None = None
-        self._exec_tick_token: int | None = None
+        # 执行进度轮询器: 每秒刷新 3 段(仅 RUNNING 时持续)。状态栏标签在基类 base_page 构建。
+        # 直达底层 _timer.schedule(绕过 self.schedule)——后者会把每个 token 追加进
+        # _timer_ids 且永不修剪,每秒 re-arm 会让该列表无限增长。ticker 自管单个 token,
+        # destroy_page 时显式 stop() 清理,无需 page 跟踪。
+        from src.panel.execution_status import ExecutionStatusTicker
+        self._exec_ticker = ExecutionStatusTicker(
+            schedule=self._timer.schedule,
+            cancel=self._timer.cancel,
+            refresh=self._refresh_execution_status,
+            is_running=lambda: self._model.executor_state == ExecutorState.RUNNING,
+        )
 
     # ── 样式辅助 ──────────────────────────────────────────────
 
@@ -903,6 +913,9 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         pass
 
     def destroy_page(self) -> None:
+        # 先停 ticker:它直达底层调度器,token 不在 _timer_ids 里,需显式取消。
+        if hasattr(self, "_exec_ticker"):
+            self._exec_ticker.stop()
         if hasattr(self, "_controller"):
             self._controller.destroy()
         super().destroy_page()

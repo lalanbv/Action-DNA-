@@ -158,6 +158,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         self._pulse_timer: QTimer | None = None
         self._executor_source_page: str | None = None
         self._last_exec_running: bool | None = None
+        self._exec_log_bridge = None  # EventBus→RingBufferLog 执行日志桥接器(phase3 创建)
         self._monitor_timer: QTimer | None = None
         self._theme_sync_backend: QtThemeSyncBackend | None = None
         self._theme_sync: SystemThemeSync | None = None
@@ -202,87 +203,151 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
     # ── 服务注册 ──
 
     def _register_lightweight_services(self) -> None:
+        from src.core.debug.ring_buffer_log import RingBufferLog
         from src.core.events.bus import TypedEventBus
         from src.core.engine.node_registry import NodeRegistry
 
         self._container.register(TypedEventBus, TypedEventBus)
         self._container.register(NodeRegistry, NodeRegistry)
+        self._container.register(RingBufferLog, RingBufferLog)
 
     def _init_services_phase1(self) -> None:
-        from src.core.events.bus import TypedEventBus
-        self._container.get(TypedEventBus)
-        self._timer.schedule(100, self._init_services_phase2)
+        # 关键: 任一阶段失败都不能阻断后续阶段 —— 否则 phase3(executor 注册)
+        # 永不执行,页面拿到 None executor,「点启动完全无反应」且无报错(exe 无控制台)。
+        # 因此每阶段用 try/except 兜底,并在 finally 中无条件调度下一阶段。
+        try:
+            from src.core.events.bus import TypedEventBus
+            self._container.get(TypedEventBus)
+        except Exception:  # noqa: BLE001 — 阶段失败降级,不阻断初始化链
+            logger.exception("服务初始化 phase1 失败(降级继续)")
+        finally:
+            self._timer.schedule(100, self._init_services_phase2)
 
     def _init_services_phase2(self) -> None:
-        from src.core.vision.capture import ScreenCapture, TemplateMatcher
-        from src.core.input import InputController
+        try:
+            from src.core.vision.capture import ScreenCapture, TemplateMatcher
+            from src.core.input import InputController
 
-        self._container.register(ScreenCapture, ScreenCapture)
-        self._container.register(TemplateMatcher, TemplateMatcher)
-        self._container.register(InputController, InputController)
+            self._container.register(ScreenCapture, ScreenCapture)
+            self._container.register(TemplateMatcher, TemplateMatcher)
+            self._container.register(InputController, InputController)
 
-        self._container.get(ScreenCapture)
-        self._container.get(TemplateMatcher)
-        self._container.get(InputController)
-
-        self._timer.schedule(50, self._init_services_phase3)
+            # 每个重型服务独立实例化: 一个失败(如 Windows 下原生库问题)不拖垮其它,
+            # 失败的服务保持 None,phase3 仍会注册 executor(降级模式)。
+            for svc in (ScreenCapture, TemplateMatcher, InputController):
+                try:
+                    self._container.get(svc)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "服务初始化失败(降级为 None,不影响 executor 注册): %s",
+                        getattr(svc, "__name__", svc),
+                    )
+        except Exception:  # noqa: BLE001
+            logger.exception("服务初始化 phase2 失败(降级继续)")
+        finally:
+            self._timer.schedule(50, self._init_services_phase3)
 
     def _init_services_phase3(self) -> None:
-        from src.core.action_executor import ActionExecutor
-        from src.core.input.hotkey_manager import HotkeyManager
-        from src.core.plugins.plugin_loader import PluginLoader
+        # 本阶段是「executor 能否注册」的关键。即使前置服务部分失败(capture 等为 None),
+        # 也要注册 executor —— ActionExecutor 构造只存储引用,容忍 None;Wait/PressKey 等
+        # 不依赖视觉的步骤仍可执行。热键/插件/监控为非致命增强,各自隔离失败。
+        try:
+            from src.core.action_executor import ActionExecutor
+            from src.core.input.hotkey_manager import HotkeyManager
+            from src.core.plugins.plugin_loader import PluginLoader
+            from src.core.vision.capture import ScreenCapture, TemplateMatcher
+            from src.core.input import InputController
 
-        capture = self.capture
-        matcher = self.matcher
-        input_ctrl = self.input_ctrl
-        event_bus = self.event_bus
-        node_registry = self.node_registry
+            # 防御性获取: 某服务工厂失败时返回 None,不抛、不中断 executor 注册。
+            capture = self._safe_get_service(ScreenCapture)
+            matcher = self._safe_get_service(TemplateMatcher)
+            input_ctrl = self._safe_get_service(InputController)
+            event_bus = self.event_bus
 
-        self._container.register(
-            ActionExecutor,
-            lambda: ActionExecutor(
-                capture, matcher, input_ctrl, event_bus,
-                max_consecutive_failures=self._cfg.schedule.max_consecutive_failures,
-            ),
-        )
-        self._container.register(HotkeyManager, HotkeyManager)
+            # executor 必须注册:即使 capture/matcher/input 为 None(降级模式)。
+            # 这正是修复「点启动完全无反应」的核心 —— 保证 executor 永不为 None。
+            self._container.register(
+                ActionExecutor,
+                lambda: ActionExecutor(
+                    capture, matcher, input_ctrl, event_bus,
+                    max_consecutive_failures=self._cfg.schedule.max_consecutive_failures,
+                    ring_log=self.ring_log,
+                ),
+            )
+            try:
+                executor = self._container.get(ActionExecutor)
+                executor.set_main_scheduler(lambda ms, cb: self._timer.schedule(ms, cb))
+            except Exception:  # noqa: BLE001
+                logger.exception("ActionExecutor 创建失败(启动按钮将给出清晰错误而非静默)")
+                executor = None
 
-        executor = self._container.get(ActionExecutor)
-        executor.set_main_scheduler(lambda ms, cb: self._timer.schedule(ms, cb))
+            # 执行日志桥接器:把 executor 生命周期事件翻译进共享 ring_log,
+            # 使执行日志面板显示 启动/停止/暂停/恢复/结束/安全停止/轮次。失败不阻断。
+            try:
+                from src.panel.components.execution_log_bridge import ExecutionLogBridge
+                self._exec_log_bridge = ExecutionLogBridge(event_bus, self.ring_log)
+            except Exception:  # noqa: BLE001
+                logger.exception("执行日志桥接器初始化失败(非致命,跳过)")
+                self._exec_log_bridge = None
 
-        # 热键管理器
-        hotkey_mgr = self._container.get(HotkeyManager)
-        hotkey_mgr.bind_to_qt(lambda ms, cb: self._timer.schedule(ms, cb))
-        hotkey_cfg = self._cfg.hotkey
-        hotkey_mgr.register_defaults(
-            on_start_stop=self._toggle_executor,
-            on_pause=lambda: (
-                executor.resume() if executor.is_paused
-                else executor.pause()
-            ),
-            on_step=lambda: logger.info(t("app.log.step_not_impl")),
-            on_emergency_stop=self._emergency_stop,
-            config=hotkey_cfg,
-        )
+            # 热键、插件、监控为增强功能,失败不阻断核心执行
+            try:
+                self._container.register(HotkeyManager, HotkeyManager)
+                hotkey_mgr = self._container.get(HotkeyManager)
+                hotkey_mgr.bind_to_qt(lambda ms, cb: self._timer.schedule(ms, cb))
+                hotkey_cfg = self._cfg.hotkey
 
-        # 插件加载器
-        self._container.register(
-            PluginLoader,
-            lambda: PluginLoader(
-                node_registry=node_registry,
-                event_bus=event_bus,
-                screen_capture=capture,
-                template_matcher=matcher,
-                input_controller=input_ctrl,
-            ),
-        )
-        self._container.get(PluginLoader)
-        self._init_plugins()
+                def _toggle_pause() -> None:
+                    # executor 降级时可能为 None(phase3 创建失败),此处防御。
+                    if executor is None:
+                        return
+                    if executor.is_paused:
+                        executor.resume()
+                    else:
+                        executor.pause()
 
-        self._setup_monitor_events()
-        self._start_monitor_poll()
+                hotkey_mgr.register_defaults(
+                    on_start_stop=self._toggle_executor,
+                    on_pause=_toggle_pause,
+                    on_step=lambda: logger.info(t("app.log.step_not_impl")),
+                    on_emergency_stop=self._emergency_stop,
+                    config=hotkey_cfg,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("热键管理器初始化失败(非致命,跳过)")
 
-        self._services_ready = True
+            try:
+                node_registry = self.node_registry
+                self._container.register(
+                    PluginLoader,
+                    lambda: PluginLoader(
+                        node_registry=node_registry,
+                        event_bus=event_bus,
+                        screen_capture=capture,
+                        template_matcher=matcher,
+                        input_controller=input_ctrl,
+                    ),
+                )
+                self._container.get(PluginLoader)
+                self._init_plugins()
+            except Exception:  # noqa: BLE001
+                logger.exception("插件加载器初始化失败(非致命,跳过)")
+
+            try:
+                self._setup_monitor_events()
+                self._start_monitor_poll()
+            except Exception:  # noqa: BLE001
+                logger.exception("监控初始化失败(非致命,跳过)")
+        except Exception:  # noqa: BLE001
+            logger.exception("服务初始化 phase3 失败(核心已尽力注册 executor)")
+        finally:
+            self._services_ready = True
+            # 服务就绪后清空页面缓存: 页面可能在服务就绪前构建并缓存了 None executor,
+            # 清缓存迫使下次导航重建页面,拿到已注册的真实 executor。
+            try:
+                self.clear_page_cache()
+            except Exception:  # noqa: BLE001
+                logger.debug("clear_page_cache 失败(忽略)", exc_info=True)
 
     def _setup_monitor_events(self) -> None:
         from src.core.events.events import MonitorTriggeredEvent
@@ -583,6 +648,9 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             self._monitor_timer.stop()
             self._monitor_timer = None
         self._stop_pulse()
+        if self._exec_log_bridge is not None:
+            self._exec_log_bridge.destroy()
+            self._exec_log_bridge = None
         if self.hotkey_manager:
             self.hotkey_manager.shutdown()
         if self.executor:
@@ -618,6 +686,9 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
                 self._monitor_timer.stop()
             self._stop_pulse()
             self.clear_page_cache()
+            if self._exec_log_bridge is not None:
+                self._exec_log_bridge.destroy()
+                self._exec_log_bridge = None
             if self.executor:
                 self.executor.stop()
             if self.hotkey_manager:

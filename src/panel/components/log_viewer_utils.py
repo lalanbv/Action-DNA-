@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from src.core.debug.ring_buffer_log import LogEventType
 from src.panel.canvas.theme import current_theme, mix_colors
+from src.utils.i18n import t
 
 
 FILTER_GROUPS: list[tuple[str, list[LogEventType] | None]] = [
@@ -57,3 +58,29 @@ def tint_for(event_type: LogEventType) -> str:
     th = current_theme()
     color = _type_mapping().get(event_type, th.text_muted)
     return mix_colors(th.bg_primary, color, 0.1)
+
+
+# LogEventType → 本地化类型标签 i18n 键(供"类型"列展示人可读标签,而非裸枚举值)。
+_TYPE_LABEL_KEYS: dict[LogEventType, str] = {
+    LogEventType.NODE_ENTER: "panel.execlog.type_node_enter",
+    LogEventType.NODE_EXIT: "panel.execlog.type_node_exit",
+    LogEventType.NODE_ERROR: "panel.execlog.type_node_error",
+    LogEventType.NODE_SKIP: "panel.execlog.type_node_skip",
+    LogEventType.VARIABLE_CHANGE: "panel.execlog.type_variable_change",
+    LogEventType.BREAKPOINT: "panel.execlog.type_breakpoint",
+    LogEventType.EXECUTION_START: "panel.execlog.type_execution_start",
+    LogEventType.EXECUTION_END: "panel.execlog.type_execution_end",
+    LogEventType.CUSTOM: "panel.execlog.type_custom",
+}
+
+
+def type_label(event_type: LogEventType) -> str:
+    """返回事件类型的本地化标签(用于"类型"列)。
+
+    未映射的类型回退到枚举原始 value,保证总有可读文本。
+    """
+    key = _TYPE_LABEL_KEYS.get(event_type)
+    if key is None:
+        return event_type.value
+    return t(key)
+

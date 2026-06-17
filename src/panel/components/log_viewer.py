@@ -12,7 +12,7 @@ from tkinter import ttk, filedialog
 
 from src.core.debug.ring_buffer_log import LogEntry, LogEventType, RingBufferLog
 from src.panel.canvas.theme import current_theme
-from src.panel.components.log_viewer_utils import FILTER_GROUPS, tint_for, type_color
+from src.panel.components.log_viewer_utils import FILTER_GROUPS, tint_for, type_color, type_label
 from src.utils.i18n import t
 
 
@@ -247,7 +247,7 @@ class LogViewer(tk.Frame):
             tk.END,
             values=(
                 entry.time_str,
-                entry.event_type.value,
+                type_label(entry.event_type),
                 entry.node_id,
                 entry.message,
             ),

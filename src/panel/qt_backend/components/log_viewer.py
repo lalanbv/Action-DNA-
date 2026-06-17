@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from src.core.debug.ring_buffer_log import LogEntry, LogEventType, RingBufferLog
 from src.panel.canvas.theme import current_theme
-from src.panel.components.log_viewer_utils import FILTER_GROUPS, tint_for, type_color
+from src.panel.components.log_viewer_utils import FILTER_GROUPS, tint_for, type_color, type_label
 from src.panel.qt_backend.components.base import QtDNAWidget
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.utils.i18n import t
@@ -187,7 +187,7 @@ class QtLogViewer(QtDNAWidget):
 
         item = QTreeWidgetItem([
             entry.time_str,
-            entry.event_type.value,
+            type_label(entry.event_type),
             entry.node_id,
             entry.message,
         ])
