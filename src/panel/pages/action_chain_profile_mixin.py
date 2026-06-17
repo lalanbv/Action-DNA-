@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
@@ -40,6 +41,8 @@ from src.panel.models.chain_model import ExecutorState
 from src.panel.pages.profile_ops_mixin import ProfileOpsMixin
 from src.utils.i18n import t
 from src.utils.paths import get_profiles_dir
+
+logger = logging.getLogger(__name__)
 
 
 class TkActionChainProfileMixin(ProfileOpsMixin):
@@ -133,11 +136,17 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
         self.model.graph.loop_count = self.loop_controls.loop_count
 
     def _on_start(self):
-        self._sync_loop_config()
         try:
+            self._sync_loop_config()
             self.controller.start_chain()
         except ValueError as e:
+            # 用户可纠正的输入问题(如未添加步骤)→ 提示框
             messagebox.showwarning(t("common.hint"), str(e))
+        except Exception as e:  # noqa: BLE001 — 启动路径任何异常都必须可见
+            # 关键: 绝不再静默吞掉。executor 缺失/服务未就绪/其它异常一律弹错误框 + 写日志,
+            # 否则在打包 exe(无控制台)中表现为「点启动完全无反应」无从排查。
+            logger.exception("启动动作链失败")
+            messagebox.showerror(t("workflow.msg.start_failed"), str(e))
 
     def _on_pause(self):
         self.controller.pause_chain()
@@ -182,21 +191,59 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
         if state == ExecutorState.IDLE and self.step_ring and self.step_ring.is_alive():
             self.step_ring.reset_execution()
 
+        # 执行进度段: 启停 tick + 刷新
+        if status_state == ExecutorState.RUNNING:
+            self._refresh_execution_status()
+            self._start_exec_tick()
+        else:
+            self._stop_exec_tick()
+            self._refresh_execution_status()
+
+    # ── 执行进度段(循环次数 / 当前步骤 / 执行时间)──────────────
+
+    def _refresh_execution_status(self) -> None:
+        """从执行器读值并刷新状态栏 3 个执行段。"""
+        executor = self.app.executor
+        if not executor or not getattr(self, "status_bar", None):
+            return
+        from src.panel.execution_status import compose_execution_status
+
+        segs = compose_execution_status(executor, self.model.graph)
+        self.status_bar.set_segment("exec_loop", segs.loop_text)
+        self.status_bar.set_segment("exec_step", segs.step_text)
+        self.status_bar.set_segment("exec_time", segs.time_text)
+
+    def _start_exec_tick(self) -> None:
+        """启动每秒轮询(仅 RUNNING 时持续)。"""
+        self._stop_exec_tick()
+        self._exec_tick_id = self.frame.after(1000, self._exec_tick)
+
+    def _exec_tick(self) -> None:
+        self._exec_tick_id = None
+        self._refresh_execution_status()
+        if self.model.executor_state == ExecutorState.RUNNING:
+            self._exec_tick_id = self.frame.after(1000, self._exec_tick)
+
+    def _stop_exec_tick(self) -> None:
+        tick_id = getattr(self, "_exec_tick_id", None)
+        if tick_id is not None:
+            try:
+                self.frame.after_cancel(tick_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._exec_tick_id = None
+
     def _on_step_highlight(self, step_index=None, iteration=None, **_kw):
         if self.model.executor_state == ExecutorState.IDLE:
             return
         if self.step_ring:
             self.step_ring.highlight(step_index if step_index is not None else -1)
-        if step_index is not None and iteration is not None:
-            steps = self.model.get_steps()
-            msg = t("chain.status.running_step",
-                step=step_index + 1, total=len(steps), round=iteration + 1)
-            self.var_status.set(msg)
-            self.status_bar.set_left(msg)
+        self._refresh_execution_status()
 
     def _on_round_started(self, _iteration=None, **_kw):
         if self.step_ring and self.step_ring.is_alive():
             self.step_ring.reset_execution()
+        self._refresh_execution_status()
 
     def _on_region_changed(self, mode=None, rect=None, **_kw):
         self.region_bar.set_mode(mode or "fullscreen")
@@ -221,12 +268,11 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
             executor = self.app.executor
             if executor:
                 step_idx = executor.current_step_index
-                iteration = executor.loop_iteration
                 if step_idx >= 0:
                     self.step_ring.highlight(step_idx)
-                    steps = self.model.get_steps()
-                    self.var_status.set(t("chain.status.running_step",
-                        step=step_idx + 1, total=len(steps), round=iteration + 1))
+        self._refresh_execution_status()
+        if state == ExecutorState.RUNNING:
+            self._start_exec_tick()
 
     # ── 监控器操作 ──
 

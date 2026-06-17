@@ -99,7 +99,9 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             event_bus=bus,
             main_thread_schedule=self.frame.after,
         )
-        self._ring_log = RingBufferLog(capacity=1000)
+        # 共享执行日志缓冲:与工作流页/桥接器/LoggingLayer 同一实例,导航后历史仍在。
+        # 防御性回退:轻量服务理论上在 __init__ 即注册,但保留本地实例防 None 崩溃。
+        self._ring_log = self.app.ring_log or RingBufferLog(capacity=1000)
 
         self._build_toolbar()
 
@@ -117,6 +119,11 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         self._monitor_widget = MonitorStatusWidget(self.frame)
         self._monitor_widget.pack(fill=tk.X, side=tk.BOTTOM)
         self.status_bar = StatusBar(self.frame)
+        # 执行进度 3 段(排在圆点之后)
+        self.status_bar.insert_segment(1, "exec_loop", "")
+        self.status_bar.insert_segment(2, "exec_step", "")
+        self.status_bar.insert_segment(3, "exec_time", "")
+        self._exec_tick_id: str | None = None
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
         self.step_ring = StepRing(self.tree)
@@ -163,6 +170,7 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         pass
 
     def destroy(self):
+        self._stop_exec_tick()
         if self.controller:
             self.controller.destroy()
         super().destroy()
