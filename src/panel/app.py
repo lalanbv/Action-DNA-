@@ -219,6 +219,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         否则页面拿到 None executor,「点启动完全无反应」且无报错(exe 无控制台)。
         因此整体 try/except 兜底,finally 中无条件调度 phase3。
         """
+        logger.info("[boot] tk phase1 进入(事件总线 + 视觉/输入重型服务)")
         try:
             from src.core.events.bus import TypedEventBus
             self._container.get(TypedEventBus)  # trigger singleton creation
@@ -251,6 +252,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         except Exception:  # noqa: BLE001 — 阶段失败降级,不阻断初始化链
             logger.exception("服务初始化 phase1 失败(降级继续)")
         finally:
+            logger.info("[boot] tk phase1 完成,调度 phase3")
             self.root.after(10, self._init_services_phase3)
 
     def _init_services_phase3(self):
@@ -260,6 +262,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
         也要注册 executor —— ActionExecutor 构造只存储引用,容忍 None;Wait/PressKey 等
         不依赖视觉的步骤仍可执行。热键/插件/监控为非致命增强,各自隔离失败。
         """
+        logger.info("[boot] tk phase3 进入(executor/热键/插件/监控)")
         try:
             from src.core.action_executor import ActionExecutor
             from src.core.input.hotkey_manager import HotkeyManager
@@ -297,6 +300,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
                 self._exec_log_bridge = None
 
             # 热键为增强功能,失败不阻断核心执行
+            logger.info("[boot] tk phase3: 即将创建 HotkeyManager + 注册全局热键")
             try:
                 self._container.register(HotkeyManager, HotkeyManager)
                 hotkey_mgr = self._container.get(HotkeyManager)
@@ -319,6 +323,7 @@ class PanelApp(ServiceProviderMixin, ThemeCallbackMixin):
                     on_emergency_stop=self._emergency_stop,
                     config=hotkey_cfg,
                 )
+                logger.info("[boot] tk phase3: 全局热键注册完成(pynput listener 已异步启动)")
             except Exception:  # noqa: BLE001
                 logger.exception("热键管理器初始化失败(非致命,跳过)")
 

@@ -177,6 +177,13 @@ class PynputBackend:
         self._bindings: dict[str, Callable[[], None]] = {}
         self._lock = threading.Lock()
         self._batching: bool = False
+        # listener 启动异步化状态:
+        # - _restart_gen: 重启世代号,并发重启时仅最新一次提交生效
+        # - _stopped:     终态标志,stop() 后拒绝再启动(backend 进入废弃态)
+        # - _restart_thread: 最近一次重启线程(诊断/调试用)
+        self._restart_gen: int = 0
+        self._stopped: bool = False
+        self._restart_thread: threading.Thread | None = None
 
         try:
             from pynput.keyboard import GlobalHotKeys  # noqa: F401
@@ -193,6 +200,9 @@ class PynputBackend:
 
     def stop(self) -> None:
         with self._lock:
+            # 标记终态:在途的后台 _do_restart_listener 提交阶段会据此丢弃新 listener,
+            # 避免 stop 之后被一次迟到的 start()「复活」。
+            self._stopped = True
             if self._listener is not None:
                 with contextlib.suppress(Exception):
                     self._listener.stop()
@@ -224,25 +234,69 @@ class PynputBackend:
         self._restart_listener()
 
     def _restart_listener(self) -> None:
-        """停止旧 listener 并用当前绑定创建新 listener。"""
+        """请求重启 listener —— 后台异步执行,调用线程立即返回。
+
+        pynput 的 ``GlobalHotKeys.start()`` 在 Windows 主线程会同步等待 listener
+        线程安装 ``WH_KEYBOARD_LL`` 全局键盘钩子;打包 exe / 特定桌面会话 /
+        安全软件介入下 ``SetWindowsHookEx`` 挂起,会冻结调用线程 → Qt 事件循环
+        卡死(窗口出现但无响应、无日志 —— 阻塞非异常,excepthook/try-except 全失效)。
+        故 listener 启动整体移到后台 daemon 线程。多次重启请求用世代号去重,
+        仅最新一次提交生效,调用线程绝不等待 ``start()`` 返回。
+        """
+        with self._lock:
+            self._restart_gen += 1
+            my_gen = self._restart_gen
+        self._restart_thread = threading.Thread(
+            target=self._do_restart_listener,
+            args=(my_gen,),
+            name="pynput-restart",
+            daemon=True,
+        )
+        self._restart_thread.start()
+
+    def _do_restart_listener(self, my_gen: int) -> None:
+        """后台线程:停止旧 listener 并启动新 listener(实际工作)。
+
+        分三段持锁,确保阻塞的 ``start()`` 不持有 ``self._lock``,
+        从而不会拖住 ``register`` / ``stop`` 等其它获取同一把锁的调用方。
+        """
         from pynput.keyboard import GlobalHotKeys
 
+        # 1. 锁内:停止旧 listener、快照绑定、判断是否仍需启动
         with self._lock:
             if self._listener is not None:
                 with contextlib.suppress(Exception):
                     self._listener.stop()
                 self._listener = None
-
-            if not self._bindings:
+            if self._stopped or my_gen != self._restart_gen:
+                return
+            bindings_snapshot = dict(self._bindings)
+            if not bindings_snapshot:
                 return
 
-            try:
-                self._listener = GlobalHotKeys(dict(self._bindings))
-                self._listener.start()
-                logger.debug(t("input.log.pynput_restarted", binding_count=len(self._bindings)))
-            except Exception as e:
-                logger.error(t("input.log.pynput_start_failed", error=e))
-                self._listener = None
+        # 2. 锁外:创建并 start —— 可能阻塞(hang),但不持锁,故不阻塞其它调用方
+        #    诊断心跳:start 前后各打一行。若历史卡死复发,日志最后一行会停在
+        #    「即将 start」之后,直接定位到 pynput 钩子安装环节。
+        logger.info(
+            "[boot] 即将启动 pynput listener(bindings=%d,线程=%s)",
+            len(bindings_snapshot), threading.current_thread().name,
+        )
+        try:
+            listener = GlobalHotKeys(bindings_snapshot)
+            listener.start()
+        except Exception as e:  # noqa: BLE001 — pynput 启动失败降级,不拖垮调用方
+            logger.error(t("input.log.pynput_start_failed", error=e))
+            return
+        logger.info("[boot] pynput listener 启动完成")
+
+        # 3. 锁内:提交新 listener;期间若有更新的 restart 或 stop 取代则丢弃
+        with self._lock:
+            if self._stopped or self._restart_gen != my_gen:
+                with contextlib.suppress(Exception):
+                    listener.stop()
+                return
+            self._listener = listener
+            logger.debug(t("input.log.pynput_restarted", binding_count=len(self._bindings)))
 
 
 # ---- Keyboard 后端（回退） ----

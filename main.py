@@ -167,38 +167,49 @@ def _install_crash_diagnostics() -> None:
 def main():
     try:
         _setup()
+        # 启动心跳日志:_setup 已把工作目录固定到项目根(frozen 模式),此处再
+        # 配置 logger,确保 daily log file 路径正确。后续每步打 [boot] 心跳,
+        # 任何启动卡死都能从日志最后一行定位到精确环节。
+        from src.core.logger import log
+        log.info(
+            "[boot] === Action<DNA> 启动开始(pid=%s, frozen=%s, platform=%s) ===",
+            os.getpid(), IS_FROZEN, sys.platform,
+        )
+        log.info("[boot] step=setup 完成")
         _install_crash_diagnostics()
+        log.info("[boot] step=crash_diagnostics 已安装")
 
         # Preload heavy C extensions (cv2, mss, numpy, pyautogui, pynput)
         # in background while UI starts — modules land in sys.modules so
         # later imports on the main thread are instant.
         from src.utils.preload import start_preload
         start_preload()  # fire-and-forget; ensure_preloaded() blocks when needed
+        log.info("[boot] step=preload 已派发后台线程")
 
         from src.panel.backend_selector import use_qt_backend
         app = None
         qt_init_error: Exception | None = None
         if use_qt_backend():
+            log.info("[boot] step=backend qt,开始初始化 QApplication")
             try:
                 from PySide6.QtWidgets import QApplication
                 if QApplication.instance() is None:
                     QApplication(sys.argv)
+                log.info("[boot] step=QApplication 就绪")
                 from src.panel.qt_backend.app import QtPanelApp
                 app = QtPanelApp()
+                log.info("[boot] step=QtPanelApp 构造完成")
             except Exception as exc:
                 # 记录 Qt 失败原因，供下方回退决策使用
                 qt_init_error = exc
-                # 同时打印到 stderr，避免仅靠 logging（可能未配置 handler）
-                # 导致用户看不到回退原因。
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Qt 后端初始化失败: %s", exc, exc_info=True
-                )
+                # log 已在 main() 开头配置 file handler,故同时落盘 + 打 stderr
+                log.warning("[boot] Qt 后端初始化失败: %s", exc, exc_info=True)
                 print(
                     f"[警告] Qt 后端初始化失败: {exc}",
                     file=sys.stderr, flush=True,
                 )
         if app is None:
+            log.info("[boot] step=backend tk 回退(Qt 未用或初始化失败)")
             # macOS 防护：若 Qt 已用 cocoa 创建 QApplication(NSApplication)，
             # 再创建 tk.Tk() 会触发 Tcl/Tk9 颜色初始化的 SIGABRT（无法被
             # try/except 捕获）。此时回退到 tkinter 不安全，改为报致命错误
@@ -213,7 +224,9 @@ def main():
                 sys.exit(1)
             from src.panel.app import PanelApp
             app = PanelApp()
+            log.info("[boot] step=PanelApp(tk) 构造完成")
 
+        log.info("[boot] step=即将进入 GUI 事件循环")
         app.run()
     except Exception:
         tb = traceback.format_exc()
