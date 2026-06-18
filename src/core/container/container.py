@@ -27,7 +27,13 @@ class ServiceContainer:
 
     def __init__(self) -> None:
         self._descriptors: dict[type, ServiceDescriptor] = {}
-        self._lock = threading.Lock()
+        # RLock(可重入)而非 Lock:工厂回调允许递归解析依赖。典型路径 ——
+        # ActionExecutor 工厂在持锁期间访问 self.ring_log(ServiceProviderMixin 的
+        # property)→ try_get(RingBufferLog)→ _resolve 再次获取同一把锁。
+        # Lock(非重入)在此自死锁,是 Windows exe「窗口出现即卡死、无日志」的根因
+        # (2026-06-18 定位):死锁发生在 __init__ 之前,故 try/except 与 excepthook
+        # 全部失效。RLock 允许同线程多次获取,跨线程仍互斥,单例双重检查锁语义不变。
+        self._lock = threading.RLock()
 
     def register(
         self,
