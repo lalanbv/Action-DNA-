@@ -83,7 +83,13 @@ class ActionExecutor:
         self._running = False
 
         # 执行进度(活跃计时 + 已完成回合)
+        # phase3.5 构造期细粒度心跳(.a-.k):Windows 冻结 exe 曾卡在「phase3.5 即将构造」
+        # 之后、phase3.5 OK 之前,但静态阅读 __init__ 无任何阻塞点。逐段记录,卡死时
+        # 日志最后一行即精确阻塞点,直接定位是哪个对象构造/模块 import 卡住主线程
+        # (QTimer 回调)。.a 不出现则说明卡在容器/工厂派发,而非 __init__。
+        log.info("[boot] phase3.5.a __init__ 字段就绪,即将 ExecutionTimer")
         self._timer = ExecutionTimer()
+        log.info("[boot] phase3.5.b ExecutionTimer 就绪")
         self._completed_rounds: int = 0
 
         # 主线程调度器（由 PanelApp 注入 frame.after）
@@ -91,11 +97,13 @@ class ActionExecutor:
 
         # 屏幕防休眠
         self._sleep_guard = DisplaySleepPreventer()
+        log.info("[boot] phase3.5.c DisplaySleepPreventer 就绪")
 
         # GraphEngine + Layers
         self._last_graph: FlowGraph | None = None
 
         self._graph_engine = GraphEngine(GraphEngineConfig())
+        log.info("[boot] phase3.5.d GraphEngine 就绪")
         self._event_bridge = EventBridgeLayer(
             publish_fn=self._emit,
             on_step_enter=self._on_step_enter,
@@ -105,27 +113,36 @@ class ActionExecutor:
         # LoggingLayer 最外层(OBSERVE 优先级自动排序):把节点开始/完成/异常、
         # 图开始/结束写入共享 ring_log,供执行日志面板实时显示。
         self._logging_layer = LoggingLayer(ring_log=self._ring_log)
+        log.info("[boot] phase3.5.e 4 个基础 Layer 构造完成(event/debug/pause/logging)")
         self._graph_engine.add_layer(self._logging_layer)
         self._graph_engine.add_layer(self._pause_layer)
         self._graph_engine.add_layer(self._event_bridge)
         self._graph_engine.add_layer(self._debug_layer)
+        log.info("[boot] phase3.5.f 4 个 Layer 已装入 GraphEngine")
 
         # FAIL-SAFE + 连续失败追踪
         self._fail_safe = FailSafeMonitor(enabled=True)
+        log.info("[boot] phase3.5.g FailSafeMonitor 就绪")
         self._consecutive_failures: int = 0
         self._max_consecutive_failures: int = max_consecutive_failures
         self._profile_root: str = "profiles"
 
         # FailSafeLayer — 每个节点入口检查鼠标角落
+        log.info("[boot] phase3.5.h 即将 import failsafe_layer(首次)")
         from src.core.layers.failsafe_layer import FailSafeLayer
+        log.info("[boot] phase3.5.h OK failsafe_layer 导入完成")
         self._failsafe_layer = FailSafeLayer(self._fail_safe, input_ctrl, capture)
         self._graph_engine.add_layer(self._failsafe_layer)
+        log.info("[boot] phase3.5.i FailSafeLayer 构造+装入完成")
 
         # MonitorCoordinationLayer — handler 活跃时阻塞主流程
         # 延迟绑定：_start_monitors 时通过 set_manager 更新
+        log.info("[boot] phase3.5.j 即将 import monitor_coordination_layer(首次)")
         from src.core.layers.monitor_coordination_layer import MonitorCoordinationLayer
+        log.info("[boot] phase3.5.j OK monitor_coordination_layer 导入完成")
         self._coordination_layer = MonitorCoordinationLayer(None)
         self._graph_engine.add_layer(self._coordination_layer)
+        log.info("[boot] phase3.5.k MonitorCoordinationLayer 构造+装入完成(__init__ 即将返回)")
 
     def set_main_scheduler(self, scheduler) -> None:
         """设置主线程调度器（frame.after），用于将后台事件桥接到主线程"""
