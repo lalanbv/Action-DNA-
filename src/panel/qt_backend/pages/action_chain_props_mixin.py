@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSpinBox, QToolButton,
+    QPushButton, QSpinBox, QToolButton, QVBoxLayout,
 )
 
+from src.core.flow import NodeType
 from src.panel.canvas.theme import current_theme, node_fill_color
 from src.panel.components.step_param_view import iter_all_fields, key_field_rows
 from src.panel.qt_backend.scale import qt_scale_manager
@@ -29,6 +32,16 @@ class QtActionChainPropsMixin:
       - self._on_edit_step()
       - self._on_delete_step()
     """
+
+    # 宿主类提供的属性（仅类型声明，运行时由宿主 __init__ 赋值；见 docstring 契约）
+    _props_layout: QVBoxLayout
+    _on_move_up: Callable[[], None]
+    _on_move_down: Callable[[], None]
+    _on_duplicate: Callable[[], None]
+    _on_edit_step: Callable[[], None]
+    _on_delete_step: Callable[[], None]
+    _on_step_enabled_change: Callable[[], None]
+    _on_move_to_index: Callable[[int, int], None]
 
     # ── 属性面板 ──────────────────────────────────────────
 
@@ -80,9 +93,9 @@ class QtActionChainPropsMixin:
         all_pairs = list(iter_all_fields(step))
         if all_pairs:
             self._add_collapsible_fields(all_pairs, th, sm)
-        self._add_enable_row(step, th, sm)
+        self._add_enable_row(step, th)
         self._add_comment_row(step, th, sm)
-        self._props_layout.addLayout(self._build_action_buttons(th, sm))
+        self._props_layout.addLayout(self._build_action_buttons())
         self._props_layout.addStretch()
 
     # ── 渲染 helper ──────────────────────────────────────────
@@ -101,7 +114,7 @@ class QtActionChainPropsMixin:
         type_name = step.action_type.value if hasattr(step.action_type, "value") else str(step.action_type)
         pill = QLabel(f"  {type_name}  ")
         pill.setStyleSheet(f"""
-            background-color: {node_fill_color("ACTION")};
+            background-color: {node_fill_color(NodeType.ACTION)};
             color: {th.text_on_accent_bright};
             font-weight: bold; font-size: {sm.s(9)}px;
             border-radius: 3px; padding: 2px 6px;
@@ -183,14 +196,17 @@ class QtActionChainPropsMixin:
         self._props_layout.addWidget(toggle)
         self._props_layout.addWidget(body)
 
-    def _add_enable_row(self, step, th, sm) -> None:
+    def _add_enable_row(self, step, th) -> None:
         """启用复选框。"""
         cb = QCheckBox(t("common.enabled"))
         cb.setChecked(step.enabled)
         cb.setStyleSheet(f"color: {th.text_primary};")
-        cb.stateChanged.connect(
-            lambda state, s=step: (setattr(s, "enabled", bool(state)), self._on_step_enabled_change()),
-        )
+
+        def _on_toggle(state: int, s=step) -> None:
+            s.enabled = bool(state)
+            self._on_step_enabled_change()
+
+        cb.stateChanged.connect(_on_toggle)
         self._props_layout.addWidget(cb)
 
     def _add_comment_row(self, step, th, sm) -> None:
@@ -203,7 +219,7 @@ class QtActionChainPropsMixin:
         edit.textChanged.connect(lambda text: setattr(step, "comment", text))
         self._props_layout.addWidget(edit)
 
-    def _build_action_buttons(self, th, sm) -> QHBoxLayout:
+    def _build_action_buttons(self) -> QHBoxLayout:
         """操作按钮行：↑ ↓ 复制 编辑 删除。"""
         row = QHBoxLayout()
         for text, handler in [

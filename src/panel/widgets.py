@@ -17,8 +17,7 @@ from src.panel.canvas.theme.style_mappings import (
 
 if TYPE_CHECKING:
     from src.panel.components.themed_entry import ThemedEntry
-    from src.panel.components.themed_checkbox import ThemedCheckbox
-    from src.panel.components.themed_radio import ThemedRadio
+    from src.panel.components.dna_toggle import DNAToggle
     from src.panel.components.dna_dropdown import DNADropdown
 
 
@@ -68,7 +67,7 @@ def themed_button(
     command: Any = None,
     style: str = "secondary",
     **kw: Any,
-) -> LabelButton:
+) -> Any:
     global LabelButton
     if LabelButton is None:
         from src.panel.components.dna_button import DNAButton
@@ -132,7 +131,7 @@ def themed_spinbox(parent: tk.Misc, **kw: Any) -> tk.Spinbox:
 
 def themed_checkbutton(
     parent: tk.Misc, text: str = "", **kw: Any
-) -> ThemedCheckbox:
+) -> DNAToggle:
     from src.panel.components.dna_toggle import DNAToggle
 
     t = current_theme()
@@ -142,7 +141,7 @@ def themed_checkbutton(
 
 def themed_radiobutton(
     parent: tk.Misc, text: str = "", **kw: Any
-) -> ThemedRadio:
+) -> DNAToggle:
     from src.panel.components.dna_toggle import DNAToggle
 
     t = current_theme()
@@ -242,7 +241,7 @@ _WIDGET_THEME_MAP: dict[str, dict[str, str]] = {
 _SKIP_WIDGETS = {"Canvas", "Treeview", "Scrollbar"}
 
 
-def apply_theme_recursive(widget: tk.Widget, theme: CanvasTheme) -> None:
+def apply_theme_recursive(widget: tk.Misc, theme: CanvasTheme) -> None:
     """递归重新配置原生 tk 控件树的主题颜色
 
     跳过 Canvas/Treeview/Scrollbar。

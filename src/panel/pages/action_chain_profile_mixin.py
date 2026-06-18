@@ -31,6 +31,7 @@ import logging
 import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
+from typing import TYPE_CHECKING
 
 from src.core.exporter import FlowExporter
 from src.core.importer import FlowImporter
@@ -42,11 +43,32 @@ from src.panel.pages.profile_ops_mixin import ProfileOpsMixin
 from src.utils.i18n import t
 from src.utils.paths import get_profiles_dir
 
+if TYPE_CHECKING:
+    from tkinter import ttk
+
+    from src.panel.app import PanelApp
+    from src.panel.components.loop_controls import LoopControls
+    from src.panel.components.status_bar import StatusBar
+    from src.panel.controllers.action_chain_controller import ActionChainController
+    from src.panel.execution_status import ExecutionStatusTicker
+    from src.panel.models.chain_model import ChainModel
+    from src.utils.step_ring import StepRing
+
 logger = logging.getLogger(__name__)
 
 
 class TkActionChainProfileMixin(ProfileOpsMixin):
     """配置文件操作 + 区域选择 + 执行控制 + 事件回调 Mixin。"""
+
+    # 宿主类提供的属性（仅类型声明，运行时由宿主 __init__ 赋值；见模块 docstring 契约）
+    model: ChainModel
+    controller: ActionChainController
+    step_ring: StepRing | None
+    loop_controls: LoopControls
+    status_bar: StatusBar
+    mon_tree: ttk.Treeview
+    app: PanelApp
+    _exec_ticker: ExecutionStatusTicker
 
     profile_i18n_prefix = "chain"
 

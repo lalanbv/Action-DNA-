@@ -63,14 +63,14 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
 
     def __init__(self, parent: tk.Widget, app, **kwargs) -> None:
         super().__init__(parent, app, **kwargs)
-        self.model: ChainModel | None = None
-        self.controller: ActionChainController | None = None
+        self.model: ChainModel = None  # type: ignore[assignment]  # 懒初始化，_build() 赋值
+        self.controller: ActionChainController = None  # type: ignore[assignment]  # 懒初始化，_build() 赋值
         self.step_ring: StepRing | None = None
         self._ring_log: RingBufferLog | None = None
         self._paned: tk.PanedWindow | None = None
         self._monitor_widget = None
-        self.status_bar: StatusBar | None = None
-        self._toolbar: ToolbarFrame | None = None
+        self.status_bar = None  # type: ignore[assignment]  # 类型继承 TkActionChainProfileMixin.status_bar: StatusBar，_build() 赋值
+        self._toolbar = None  # type: ignore[assignment]  # 类型继承基类 BasePage._toolbar: ToolbarFrame，_build() 赋值
         self.profile_bar: ProfileBar | None = None
         self.region_bar: RegionBar | None = None
         self.run_controls: RunControls | None = None
@@ -78,11 +78,11 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         self._lbl_status = None
         self.step_palette: StepPalette | None = None
         self.log_viewer: LogViewer | None = None
-        self.step_props: StepPropertyPanel | None = None
-        self.tree: ttk.Treeview | None = None
+        self.step_props: StepPropertyPanel = None  # type: ignore[assignment]  # 懒初始化，_build() 赋值
+        self.tree: ttk.Treeview = None  # type: ignore[assignment]  # 懒初始化，_build() 赋值
         self._tree_cols: list = []
         self._mon_frame = None
-        self.mon_tree: ttk.Treeview | None = None
+        self.mon_tree: ttk.Treeview = None  # type: ignore[assignment]  # 懒初始化，_build() 赋值
         self._mon_tree_cols: list = []
         self._btn_mon_add = None
         self._btn_mon_edit = None

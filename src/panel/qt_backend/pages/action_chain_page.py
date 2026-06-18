@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -79,13 +80,12 @@ class _ReorderableTreeWidget(QTreeWidget):
         target_item = self.itemAt(pos)
         n = self.topLevelItemCount()
         if target_item is None:
-            target_idx = None  # 落到所有行下方空区 → 追加末尾
-            click_below = False
+            target = n  # 落到所有行下方空区 → 追加末尾
         else:
-            target_idx = self.indexOfTopLevelItem(target_item)
-            click_below = pos.y() > self.visualItemRect(target_item).center().y()
-        # 半行定位(原生 Qt 指示线语义)+ 选中块整体 insert(支持多选拖拽)
-        target = drop_insert_target(target_idx, click_below, n)
+            idx = self.indexOfTopLevelItem(target_item)
+            below = pos.y() > self.visualItemRect(target_item).center().y()
+            target = drop_insert_target(idx, below, n)  # 半行定位:下半→后,上半→前
+        # 选中块整体 insert(支持多选拖拽)
         new_order = build_block_insert_order(n, self._drag_rows, target)
         self._drag_rows = []
         event.accept()
@@ -337,13 +337,18 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         layout.setSpacing(2)
 
         self._palette_buttons: list[QPushButton] = []
-        self._palette_action_types: list[str] = []
+        self._palette_action_types: list[ActionType] = []
+
+        def _add_step_cmd(at: ActionType, ik: str) -> Callable[[], None]:
+            # 工厂捕获循环变量（每次调用绑定独立的 at/ik），返回无参 Callable
+            return lambda: self._add_step_dialog(at, t(ik))
+
         for action_type, i18n_key in ACTION_PALETTE:
             accent_token = action_accent(action_type)
             color = getattr(th, accent_token, th.accent_blue)
             btn = themed_palette_button(
                 scroll_content, t(i18n_key), color,
-                command=lambda at=action_type, ik=i18n_key: self._add_step_dialog(at, t(ik)),
+                command=_add_step_cmd(action_type, i18n_key),
             )
             layout.addWidget(btn)
             self._palette_buttons.append(btn)
@@ -873,11 +878,6 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
     # ── 列表刷新 ──────────────────────────────────────────
 
-    @staticmethod
-    def _step_wait_text(step) -> str:
-        """步骤列表「等待」列文案（委托共用 wait_text，Qt/tk 统一 :g 格式）。"""
-        return wait_text(step)
-
     def _refresh_step_list(self):
         if not hasattr(self, "_step_tree") or self._step_tree is None:
             return
@@ -885,13 +885,13 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         steps = self._model.get_steps()
         for i, step in enumerate(steps):
             type_name = step.action_type.value
-            wait_text = self._step_wait_text(step)
+            wait_col = wait_text(step)
             enabled_text = "✓" if step.enabled else "--"
             item = QTreeWidgetItem([
                 str(i + 1),
                 type_name,
                 step.describe(),
-                wait_text,
+                wait_col,
                 enabled_text,
                 step.comment or "",
             ])
@@ -989,8 +989,11 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
             if scroll:
                 scroll.setStyleSheet(f"background-color: {th.panel_bg};")
             # Re-apply palette button styles with new theme
+            palette_types = getattr(self, "_palette_action_types", [])
             for i, btn in enumerate(getattr(self, "_palette_buttons", [])):
-                action_type = self._palette_action_types[i] if i < len(self._palette_action_types) else ""
+                if i >= len(palette_types):
+                    continue
+                action_type = palette_types[i]
                 accent_token = action_accent(action_type)
                 accent = getattr(th, accent_token, th.accent_blue)
                 btn.setStyleSheet(f"""
