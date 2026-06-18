@@ -180,10 +180,10 @@ class PynputBackend:
         # listener 启动异步化状态:
         # - _restart_gen: 重启世代号,并发重启时仅最新一次提交生效
         # - _stopped:     终态标志,stop() 后拒绝再启动(backend 进入废弃态)
-        # - _restart_thread: 最近一次重启线程(诊断/调试用)
+        # - _exec_lock:   串行化 _do_restart_listener 全流程,消除并发双 listener 窗口
         self._restart_gen: int = 0
         self._stopped: bool = False
-        self._restart_thread: threading.Thread | None = None
+        self._exec_lock = threading.Lock()
 
         try:
             from pynput.keyboard import GlobalHotKeys  # noqa: F401
@@ -246,57 +246,66 @@ class PynputBackend:
         with self._lock:
             self._restart_gen += 1
             my_gen = self._restart_gen
-        self._restart_thread = threading.Thread(
+        threading.Thread(
             target=self._do_restart_listener,
             args=(my_gen,),
             name="pynput-restart",
             daemon=True,
-        )
-        self._restart_thread.start()
+        ).start()
 
     def _do_restart_listener(self, my_gen: int) -> None:
         """后台线程:停止旧 listener 并启动新 listener(实际工作)。
 
-        分三段持锁,确保阻塞的 ``start()`` 不持有 ``self._lock``,
-        从而不会拖住 ``register`` / ``stop`` 等其它获取同一把锁的调用方。
+        ``_exec_lock`` 把整个 restart 流程串行化 —— 同时只有一个线程在
+        stop-old / start / commit,从根上消除「并发 restart 致两个 listener 短暂
+        共存、热键被双触发」的窗口。``_exec_lock`` 只在后台线程获取,主线程的
+        ``_restart_listener`` / ``register`` / ``stop`` 都不碰它,故不引入主线程
+        阻塞;即便某次 ``start()`` 挂起,也只会让后续 restart 请求在后台排队,
+        不影响 UI 事件循环。
+
+        ``start()`` 仍放在 ``self._lock`` 之外(避免持 state 锁阻塞 start),
+        ``self._lock`` 只保护瞬间的状态读写。锁序:_exec_lock 外、self._lock 内,
+        其余路径仅获取 self._lock,无反向嵌套 → 无死锁。
         """
         from pynput.keyboard import GlobalHotKeys
 
-        # 1. 锁内:停止旧 listener、快照绑定、判断是否仍需启动
-        with self._lock:
-            if self._listener is not None:
-                with contextlib.suppress(Exception):
-                    self._listener.stop()
-                self._listener = None
-            if self._stopped or my_gen != self._restart_gen:
-                return
-            bindings_snapshot = dict(self._bindings)
-            if not bindings_snapshot:
-                return
+        with self._exec_lock:
+            # 1. 锁内:停止旧 listener、快照绑定、判断是否仍需启动
+            with self._lock:
+                if self._listener is not None:
+                    with contextlib.suppress(Exception):
+                        self._listener.stop()
+                    self._listener = None
+                if self._stopped or my_gen != self._restart_gen:
+                    return
+                bindings_snapshot = dict(self._bindings)
+                if not bindings_snapshot:
+                    return
 
-        # 2. 锁外:创建并 start —— 可能阻塞(hang),但不持锁,故不阻塞其它调用方
-        #    诊断心跳:start 前后各打一行。若历史卡死复发,日志最后一行会停在
-        #    「即将 start」之后,直接定位到 pynput 钩子安装环节。
-        logger.info(
-            "[boot] 即将启动 pynput listener(bindings=%d,线程=%s)",
-            len(bindings_snapshot), threading.current_thread().name,
-        )
-        try:
-            listener = GlobalHotKeys(bindings_snapshot)
-            listener.start()
-        except Exception as e:  # noqa: BLE001 — pynput 启动失败降级,不拖垮调用方
-            logger.error(t("input.log.pynput_start_failed", error=e))
-            return
-        logger.info("[boot] pynput listener 启动完成")
-
-        # 3. 锁内:提交新 listener;期间若有更新的 restart 或 stop 取代则丢弃
-        with self._lock:
-            if self._stopped or self._restart_gen != my_gen:
-                with contextlib.suppress(Exception):
-                    listener.stop()
+            # 2. 锁外(但 _exec_lock 内):创建并 start —— 可能阻塞(hang),但不持
+            #    self._lock,故不阻塞 register/stop;_exec_lock 保证此段串行。
+            #    诊断心跳:start 前后各打一行。若历史卡死复发,日志最后一行会停在
+            #    「即将 start」之后,直接定位到 pynput 钩子安装环节。
+            logger.info(
+                "[boot] 即将启动 pynput listener(bindings=%d,线程=%s)",
+                len(bindings_snapshot), threading.current_thread().name,
+            )
+            try:
+                listener = GlobalHotKeys(bindings_snapshot)
+                listener.start()
+            except Exception as e:  # noqa: BLE001 — pynput 启动失败降级,不拖垮调用方
+                logger.error(t("input.log.pynput_start_failed", error=e))
                 return
-            self._listener = listener
-            logger.debug(t("input.log.pynput_restarted", binding_count=len(self._bindings)))
+            logger.info("[boot] pynput listener 启动完成")
+
+            # 3. 锁内:提交新 listener;期间若有更新的 restart 或 stop 取代则丢弃
+            with self._lock:
+                if self._stopped or self._restart_gen != my_gen:
+                    with contextlib.suppress(Exception):
+                        listener.stop()
+                    return
+                self._listener = listener
+                logger.debug(t("input.log.pynput_restarted", binding_count=len(self._bindings)))
 
 
 # ---- Keyboard 后端（回退） ----
