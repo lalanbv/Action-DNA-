@@ -146,6 +146,18 @@ def theme_to_qss(t: CanvasTheme) -> str:
     QSpinBox:focus {{
         border-color: {t.accent_blue};
     }}
+    /* 浮点数值框(秒数/时长/速度) — 镜像 QSpinBox 保持视觉一致 */
+    QDoubleSpinBox {{
+        background-color: {t.input_bg};
+        color: {t.input_fg};
+        border: 1px solid {t.border_default};
+        border-radius: 4px;
+        padding: {t.pad_xs}px {t.pad_sm}px;
+        min-height: {t.button_height - 8}px;
+    }}
+    QDoubleSpinBox:focus {{
+        border-color: {t.accent_blue};
+    }}
 
     /* ── 下拉框 ── */
     QComboBox {{

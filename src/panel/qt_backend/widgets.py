@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal
 from PySide6.QtGui import QFont
 
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QRadioButton, QSpinBox, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt, QSize
@@ -116,6 +116,36 @@ def themed_spinbox(parent: QWidget, **kw: Any) -> QSpinBox:
     th = current_theme()
     spin = QSpinBox(parent)
     spin.setFont(_qt_font(th.font_body))
+    if "minimum" in kw:
+        spin.setMinimum(kw.pop("minimum"))
+    if "maximum" in kw:
+        spin.setMaximum(kw.pop("maximum"))
+    if "value" in kw:
+        spin.setValue(kw.pop("value"))
+    if "prefix" in kw:
+        spin.setPrefix(kw.pop("prefix"))
+    if "suffix" in kw:
+        spin.setSuffix(kw.pop("suffix"))
+    if "single_step" in kw:
+        spin.setSingleStep(kw.pop("single_step"))
+    obj_name = kw.pop("objectName", "")
+    if obj_name:
+        spin.setObjectName(obj_name)
+    return spin
+
+
+def themed_doublespinbox(parent: QWidget, **kw: Any) -> QDoubleSpinBox:
+    """浮点数值框(QDoubleSpinBox)。
+
+    用于秒数/时长/速度等需要小数精度的字段(对齐 tkinter tk.Spinbox 的浮点行为)。
+    与 themed_spinbox API 对齐:minimum/maximum/value/single_step/prefix/suffix/objectName,
+    额外支持 decimals(小数位数, 默认 2)。
+    """
+    th = current_theme()
+    spin = QDoubleSpinBox(parent)
+    spin.setFont(_qt_font(th.font_body))
+    # 默认 2 位小数; 调用方可经 decimals 覆盖(必须先于 setValue 设置, 否则值被按旧精度舍入)
+    spin.setDecimals(kw.pop("decimals", 2))
     if "minimum" in kw:
         spin.setMinimum(kw.pop("minimum"))
     if "maximum" in kw:

@@ -8,9 +8,9 @@ from __future__ import annotations
 import copy
 import logging
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QComboBox, QFrame, QHBoxLayout, QHeaderView,
     QLabel, QPlainTextEdit, QPushButton,
     QScrollArea, QSizePolicy,
     QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
@@ -20,12 +20,18 @@ from PySide6.QtWidgets import (
 from src.core.action import ActionType
 from src.core.debug.ring_buffer_log import LogEventType, RingBufferLog
 from src.core.events.event_names import EventName
-from src.core.step_types import STEP_CLASSES
+from src.core.step_types import STEP_CLASSES, WaitRandomStep, WaitStep
 from src.panel.canvas.theme import current_theme, node_fill_color
 from src.panel.pages.page_registry import PAGE_HOME
 from src.panel.components.palette_data import ACTION_PALETTE, action_accent
+from src.panel.components.step_param_view import (
+    build_batch_move_order,
+    build_bottom_order,
+    build_move_order,
+    build_top_order,
+)
 from src.panel.controllers.action_chain_controller import ActionChainController
-from src.panel.models.chain_model import ChainModel
+from src.panel.models.chain_model import ChainModel, ExecutorState
 from src.panel.profile_manager import ProfileManager
 from src.panel.qt_backend.pages.action_chain_profile_mixin import QtActionChainProfileMixin
 from src.panel.qt_backend.pages.action_chain_props_mixin import QtActionChainPropsMixin
@@ -37,6 +43,44 @@ from src.panel.qt_backend.widgets import themed_label, themed_palette_button, th
 from src.utils.i18n import t
 
 logger = logging.getLogger(__name__)
+
+
+class _ReorderableTreeWidget(QTreeWidget):
+    """支持拖拽重排 + 多选的步骤树。
+
+    拖拽释放时计算「源选中行 → 目标行」的 insert 语义 new_order，
+    通过 ``reordered`` 信号通知宿主调 ``controller.reorder_steps``；
+    不让默认 dropEvent 移动 widget item，由 model 事件触发 refresh 重建。
+    """
+
+    reordered = Signal(list)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setRootIsDecorated(False)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._drag_rows: list[int] = []
+
+    def startDrag(self, actions):
+        self._drag_rows = sorted({self.indexOfTopLevelItem(i) for i in self.selectedItems()})
+        super().startDrag(actions)
+
+    def dropEvent(self, event):
+        if event.source() is not self or not self._drag_rows:
+            super().dropEvent(event)
+            return
+        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        target_item = self.itemAt(pos)
+        n = self.topLevelItemCount()
+        target = (n - 1) if target_item is None else self.indexOfTopLevelItem(target_item)
+        new_order = build_move_order(n, self._drag_rows[0], target)
+        self._drag_rows = []
+        event.accept()
+        self.reordered.emit(new_order)
 
 
 @register_page("action_chain", label_i18n=ACTION_CHAIN_TITLE, desc_i18n=ACTION_CHAIN_DESC, icon="🔗", category="main")
@@ -307,16 +351,30 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
         frame, frame_layout = self._styled_panel()
 
+        # 标题行 + 批量重排按钮（支持多选）
+        title_row = QHBoxLayout()
         title = QLabel(t("chain.steps"))
         title.setObjectName("dnaTitle")
-        frame_layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        for text, handler in [
+            (t("common.move_top"), self._on_move_top),
+            ("↑", lambda: self._on_move_batch(-1)),
+            ("↓", lambda: self._on_move_batch(1)),
+            (t("common.move_bottom"), self._on_move_bottom),
+        ]:
+            b = QPushButton(text)
+            b.setObjectName("dnaToolBtn")
+            b.setFixedHeight(sm.s(22))
+            b.clicked.connect(handler)
+            title_row.addWidget(b)
+        frame_layout.addLayout(title_row)
 
-        self._step_tree = QTreeWidget()
+        self._step_tree = _ReorderableTreeWidget()
         self._step_tree.setHeaderLabels([
             "#", t("chain.col.type"), t("chain.col.detail"),
             t("chain.col.wait"), t("common.enabled"), t("chain.col.comment"),
         ])
-        self._step_tree.setRootIsDecorated(False)
         self._step_tree.setColumnCount(6)
         header = self._step_tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -328,6 +386,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         # No fixed max height — let layout allocate space dynamically
         self._step_tree.currentItemChanged.connect(lambda *_: self._on_step_selected())
         self._step_tree.itemDoubleClicked.connect(lambda: self._on_edit_step())
+        self._step_tree.reordered.connect(self._on_tree_reorder)
         frame_layout.addWidget(self._step_tree)
 
         parent_layout.addWidget(frame, 1)  # stretch=1: step list gets most vertical space ──────────────────────────────────────────
@@ -629,6 +688,82 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
     def _on_move_down(self):
         self._move_step(1)
 
+    def _on_duplicate(self):
+        """复制当前步骤：副本插入到其后，并选中新副本。"""
+        idx = self._selected_step_idx
+        if idx is None:
+            return
+        try:
+            new_idx = self._controller.duplicate_step(idx)
+        except RuntimeError:
+            self._show_warning(t("common.hint"), t("chain.msg.executor_busy"))
+            return
+        if new_idx >= 0:
+            self._selected_step_idx = new_idx
+            self._on_step_selected()
+
+    def _on_move_to_index(self, target: int) -> None:
+        """把当前步骤 insert 移动到 target（0-based），其余顺延。"""
+        idx = self._selected_step_idx
+        if idx is None:
+            return
+        steps = self._model.get_steps()
+        if not (0 <= target < len(steps)) or target == idx:
+            return
+        try:
+            self._controller.move_to_index(idx, target)
+        except RuntimeError:
+            self._show_warning(t("common.hint"), t("chain.msg.executor_busy"))
+            return
+        self._selected_step_idx = target
+        self._on_step_selected()
+
+    def _selected_rows(self) -> list[int]:
+        """步骤树当前选中的行索引（升序、去重）。"""
+        if not hasattr(self, "_step_tree") or self._step_tree is None:
+            return []
+        return sorted({self._step_tree.indexOfTopLevelItem(i) for i in self._step_tree.selectedItems()})
+
+    def _apply_reorder(self, new_order: list[int], focus_idx: int | None = None) -> None:
+        """应用重排（执行中被拒时提示）；可选设置重排后主选中行。"""
+        try:
+            self._controller.reorder_steps(new_order)
+        except RuntimeError:
+            self._show_warning(t("common.hint"), t("chain.msg.executor_busy"))
+            return
+        if focus_idx is not None:
+            self._selected_step_idx = focus_idx  # _refresh_step_list 据此恢复选中
+
+    def _on_move_top(self) -> None:
+        rows = self._selected_rows()
+        if not rows:
+            return
+        order = build_top_order(len(self._model.get_steps()), rows)
+        self._apply_reorder(order, focus_idx=0)
+
+    def _on_move_bottom(self) -> None:
+        rows = self._selected_rows()
+        if not rows:
+            return
+        n = len(self._model.get_steps())
+        order = build_bottom_order(n, rows)
+        self._apply_reorder(order, focus_idx=n - 1)
+
+    def _on_move_batch(self, delta: int) -> None:
+        rows = self._selected_rows()
+        if not rows:
+            return
+        n = len(self._model.get_steps())
+        new_order = build_batch_move_order(n, rows, delta)
+        new_positions = sorted(new_order.index(r) for r in rows)
+        self._apply_reorder(new_order, focus_idx=new_positions[0] if new_positions else None)
+
+    def _on_tree_reorder(self, new_order: list[int]) -> None:
+        """拖拽释放：应用 insert 语义重排。"""
+        if not new_order:
+            return
+        self._apply_reorder(new_order)
+
     # ── 监控器操作 ──────────────────────────────────────────
 
     def _on_add_monitor(self):
@@ -721,6 +856,21 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
     # ── 列表刷新 ──────────────────────────────────────────
 
+    @staticmethod
+    def _step_wait_text(step) -> str:
+        """步骤列表「等待」列文案。
+
+        类型化步骤无统一的 wait_time 字段(迁移前旧 ActionStep 才有):
+        - WaitStep → '{wait_seconds}s'
+        - WaitRandomStep → '{min}~{max}s'
+        - 其他 → ''(各步骤时间信息由 describe() 详情列承载)
+        """
+        if isinstance(step, WaitStep):
+            return f"{step.wait_seconds:g}s"
+        if isinstance(step, WaitRandomStep):
+            return f"{step.wait_min:g}~{step.wait_max:g}s"
+        return ""
+
     def _refresh_step_list(self):
         if not hasattr(self, "_step_tree") or self._step_tree is None:
             return
@@ -728,7 +878,7 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         steps = self._model.get_steps()
         for i, step in enumerate(steps):
             type_name = step.action_type.value
-            wait_text = f"{step.wait_time}s" if hasattr(step, "wait_time") and step.wait_time else ""
+            wait_text = self._step_wait_text(step)
             enabled_text = "✓" if step.enabled else "--"
             item = QTreeWidgetItem([
                 str(i + 1),

@@ -21,6 +21,7 @@ from src.panel.qt_backend.widgets import (
     themed_label,
     themed_entry,
     themed_spinbox,
+    themed_doublespinbox,
     themed_checkbutton,
     themed_radiobutton,
     themed_combobox,
@@ -100,6 +101,30 @@ class TestThemedSpinbox:
         assert s.value() == 50
         assert s.minimum() == 0
         assert s.maximum() == 100
+
+
+class TestThemedDoubleSpinbox:
+    """QDoubleSpinBox 浮点数值框(根因 A 修复:支持小数秒数/时长)。"""
+
+    def test_creates_doublespinbox(self):
+        from PySide6.QtWidgets import QDoubleSpinBox
+
+        s = themed_doublespinbox(
+            None, minimum=0.1, maximum=300.0, value=2.5, single_step=0.1, decimals=2,
+        )
+        assert isinstance(s, QDoubleSpinBox)
+        assert s.value() == 2.5
+        assert s.minimum() == 0.1
+        assert s.maximum() == 300.0
+        assert s.singleStep() == 0.1
+        assert s.decimals() == 2
+
+    def test_default_decimals_when_unspecified(self):
+        from PySide6.QtWidgets import QDoubleSpinBox
+
+        s = themed_doublespinbox(None, minimum=0.0, maximum=10.0, value=1.0)
+        assert isinstance(s, QDoubleSpinBox)
+        assert s.value() == 1.0
 
 
 class TestThemedCheckbutton:

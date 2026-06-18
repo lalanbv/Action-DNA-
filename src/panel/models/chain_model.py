@@ -154,6 +154,45 @@ class ChainModel:
             self._mark_dirty()
             self._bus.emit(EventName.CHAIN_STEPS_CHANGED)
 
+    def reorder_steps(self, new_order: list[int]) -> None:
+        """按 new_order（原索引的新排列）insert 语义重排所有 ACTION 节点内容。
+
+        new_order[i] = 新序列位置 i 应承载的原步骤索引。
+        仅交换节点承载的 action/comment/enabled，不动 DAG 边——与既有
+        ``move_step`` 的「交换内容」模式一致，零拓扑风险。
+        非合法排列（长度不符或非 0..n-1）时静默忽略。
+        """
+        action_nodes = self.graph.action_nodes()
+        n = len(action_nodes)
+        if len(new_order) != n or sorted(new_order) != list(range(n)):
+            return  # 非合法排列，保持原序
+        old = [(nd.action, nd.comment, nd.enabled) for nd in action_nodes]
+        for node, old_idx in zip(action_nodes, new_order):
+            action, comment, enabled = old[old_idx]
+            node.action = action
+            node.comment = comment
+            node.enabled = enabled
+        self._mark_dirty()
+        self._bus.emit(EventName.CHAIN_STEPS_CHANGED)
+
+    def duplicate_step(self, index: int) -> int:
+        """深拷贝步骤，副本插入到 index 之后，返回副本新索引；越界返回 -1。
+
+        实现：先 ``add_step`` 追加到末尾，再用 ``reorder_steps`` 把副本
+        插入式移动到 index+1（复用 insert 语义重排）。
+        """
+        import copy
+        steps = self.get_steps()
+        if not (0 <= index < len(steps)):
+            return -1
+        self.add_step(copy.deepcopy(steps[index]))  # 副本暂在末尾
+        n = len(self.get_steps())
+        new_order = list(range(n))
+        last = new_order.pop()  # 副本当前在末尾
+        new_order.insert(index + 1, last)  # 移到 index+1
+        self.reorder_steps(new_order)
+        return index + 1
+
     def clear_steps(self) -> None:
         """清空所有步骤，重置为空流程图"""
         self._init_empty_graph()

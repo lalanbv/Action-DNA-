@@ -11,7 +11,7 @@ from abc import abstractmethod
 from typing import Callable
 
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+    QAbstractSpinBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
     QLabel, QLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
@@ -21,8 +21,8 @@ from src.panel.canvas.theme import current_theme
 from src.panel.canvas.theme.theme_manager import on_theme_change, remove_theme_change
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.panel.qt_backend.widgets import (
-    reapply_button_qss, themed_button, themed_checkbutton, themed_entry,
-    themed_frame, themed_label, themed_spinbox,
+    reapply_button_qss, themed_button, themed_checkbutton, themed_doublespinbox,
+    themed_entry, themed_frame, themed_label, themed_spinbox,
 )
 from src.utils.float_utils import safe_float, safe_int
 from src.utils.i18n import t
@@ -199,16 +199,26 @@ class QtStepDialogBase(QDialog):
         max_val: float = 9999.0,
         increment: float = 0.1,
         row: int | None = None,
-    ) -> QSpinBox:
-        """添加带标签的数值框，返回 QSpinBox。"""
-        sm = qt_scale_manager()
-        spin = themed_spinbox(
-            self._content_frame,
-            minimum=int(min_val) if increment >= 1 else int(min_val * 1000),
-            maximum=int(max_val) if increment >= 1 else int(max_val * 1000),
-            value=int(default) if increment >= 1 else default,
-            single_step=increment,
-        )
+    ) -> QAbstractSpinBox:
+        """添加带标签的数值框。
+
+        小数步进(increment < 1, 如秒数/时长/速度)→ QDoubleSpinBox, 使用真实
+        min/max/value/increment(对齐 tkinter tk.Spinbox 浮点行为)。
+        整数步进(increment >= 1)→ QSpinBox。
+        两种控件均提供 .value()/.setValue(), _get_float/_get_int 无需区分。
+        """
+        if increment < 1:
+            spin = themed_doublespinbox(
+                self._content_frame,
+                minimum=min_val, maximum=max_val,
+                value=default, single_step=increment, decimals=2,
+            )
+        else:
+            spin = themed_spinbox(
+                self._content_frame,
+                minimum=int(min_val), maximum=int(max_val),
+                value=int(default), single_step=int(increment),
+            )
         self._add_row(label, spin, row)
         return spin
 

@@ -43,6 +43,28 @@ class ActionChainController(BaseController):
         self._require_idle()
         self.model.clear_steps()
 
+    def reorder_steps(self, new_order: list[int]) -> None:
+        """insert 语义批量重排（拖拽 / 置顶置底 / 批量移动的统一入口）。"""
+        self._require_idle()
+        self.model.reorder_steps(new_order)
+
+    def duplicate_step(self, index: int) -> int:
+        """复制步骤，副本插入到 index 之后，返回副本新索引。"""
+        self._require_idle()
+        return self.model.duplicate_step(index)
+
+    def move_to_index(self, index: int, target: int) -> None:
+        """把 index 处步骤 insert 移动到 target，其余顺延（非交换语义）。"""
+        self._require_idle()
+        steps = self.model.get_steps()
+        n = len(steps)
+        if not (0 <= index < n and 0 <= target < n) or index == target:
+            return
+        order = list(range(n))
+        moved = order.pop(index)
+        order.insert(target, moved)
+        self.model.reorder_steps(order)
+
     def clear_matcher_cache(self) -> None:
         self._matcher.clear_cache()
 

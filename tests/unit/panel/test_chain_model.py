@@ -153,6 +153,66 @@ class TestMoveStep:
         bus.emit.assert_not_called()
 
 
+class TestReorderSteps:
+    """insert 语义批量重排（对比 swap 的 move_step）。"""
+
+    def test_insert_semantic_not_swap(self, model: ChainModel) -> None:
+        for at in (ActionType.CLICK_POS, ActionType.WAIT,
+                   ActionType.PRESS_KEY, ActionType.WAIT_RANDOM):
+            model.add_step(_step(at))
+        # A(位置0)移到位置2 → 期望 [B,C,A,D]；swap(0,2) 会错成 [C,B,A,D]
+        model.reorder_steps([1, 2, 0, 3])
+        got = [s.action_type for s in model.get_steps()]
+        assert got == [ActionType.WAIT, ActionType.PRESS_KEY,
+                       ActionType.CLICK_POS, ActionType.WAIT_RANDOM]
+
+    def test_preserves_node_count_and_topology(self, model: ChainModel) -> None:
+        for at in (ActionType.WAIT, ActionType.PRESS_KEY, ActionType.WAIT_RANDOM):
+            model.add_step(_step(at))
+        before_nodes = len(model.graph.action_nodes())
+        before_edges = len(model.graph.edges)
+        model.reorder_steps([2, 0, 1])
+        assert len(model.graph.action_nodes()) == before_nodes
+        assert len(model.graph.edges) == before_edges  # 边不变
+
+    def test_rejects_invalid_permutation(self, model: ChainModel) -> None:
+        for at in (ActionType.WAIT, ActionType.PRESS_KEY):
+            model.add_step(_step(at))
+        original = [s.action_type for s in model.get_steps()]
+        model.reorder_steps([0, 0])  # 非合法排列
+        assert [s.action_type for s in model.get_steps()] == original
+
+    def test_emits_changed_event(self, model: ChainModel) -> None:
+        for at in (ActionType.WAIT, ActionType.PRESS_KEY):
+            model.add_step(_step(at))
+        model._bus.reset_mock()
+        model.reorder_steps([1, 0])
+        model._bus.emit.assert_called()
+
+
+class TestDuplicateStep:
+    """深拷贝步骤，副本插入到源之后。"""
+
+    def test_copy_inserted_after_source(self, model: ChainModel) -> None:
+        model.add_step(_step(ActionType.WAIT))
+        model.add_step(_step(ActionType.PRESS_KEY))
+        new_idx = model.duplicate_step(0)
+        assert new_idx == 1
+        got = [s.action_type for s in model.get_steps()]
+        assert got == [ActionType.WAIT, ActionType.WAIT, ActionType.PRESS_KEY]
+
+    def test_copy_is_independent(self, model: ChainModel) -> None:
+        model.add_step(_step(ActionType.WAIT, wait_seconds=2.0))
+        model.duplicate_step(0)
+        steps = model.get_steps()
+        steps[1].wait_seconds = 9.0  # 改副本
+        assert steps[0].wait_seconds == 2.0  # 原件不受影响
+
+    def test_out_of_range_returns_minus_one(self, model: ChainModel) -> None:
+        model.add_step(_step(ActionType.WAIT))
+        assert model.duplicate_step(5) == -1
+
+
 class TestClearSteps:
     def test_clear(self, model: ChainModel) -> None:
         model.add_step(_step(ActionType.WAIT, wait_seconds=1.0))

@@ -17,6 +17,12 @@ from src.core.debug.ring_buffer_log import RingBufferLog
 from src.core.events.event_names import EventName
 from src.panel.canvas.scale import scale_manager
 from src.panel.canvas.theme import current_theme
+from src.panel.components.step_param_view import (
+    build_batch_move_order,
+    build_bottom_order,
+    build_move_order,
+    build_top_order,
+)
 from src.panel.components import (
     LogViewer,
     LoopControls,
@@ -278,14 +284,32 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             on_edit=self._on_edit_step,
             on_delete=self._on_delete_step,
             on_enabled_change=self._on_step_enabled_change,
+            on_duplicate=self._on_duplicate,
+            on_move_to_index=self._on_move_to_index,
         )
 
     def _build_step_list(self, parent):
         lf = themed_labelframe(parent, text=t("chain.steps"))
         lf.pack(fill=tk.X, padx=4, pady=4)
 
+        # 批量重排按钮（支持多选）
+        toolbar = themed_frame(lf)
+        toolbar.pack(fill=tk.X, padx=4, pady=(2, 2))
+        for text, cmd in [
+            (t("common.move_top"), self._on_move_top),
+            ("↑", lambda: self._on_move_batch(-1)),
+            ("↓", lambda: self._on_move_batch(1)),
+            (t("common.move_bottom"), self._on_move_bottom),
+        ]:
+            themed_button(toolbar, text=text, command=cmd).pack(side=tk.LEFT, padx=1)
+
+        tree_frame = themed_frame(lf)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
         columns = ("index", "type", "detail", "wait", "enabled", "comment")
-        self.tree = ttk.Treeview(lf, columns=columns, show="headings", height=8)
+        self.tree = ttk.Treeview(
+            tree_frame, columns=columns, show="headings", height=8, selectmode="extended",
+        )
         self._tree_cols = [
             ("index", "#", 0.05, tk.CENTER),
             ("type", t("chain.col.type"), 0.12, tk.CENTER),
@@ -296,11 +320,19 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
         ]
         self.setup_proportional_columns(self.tree, self._tree_cols, key="steps")
         self.tree.bind("<<TreeviewSelect>>", lambda _: self._on_step_selected())
-        sb = ttk.Scrollbar(lf, orient=tk.VERTICAL, command=self.tree.yview)
+        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.bind("<Double-1>", lambda _: self._on_edit_step())
+
+        # 拖拽重排：按下记录起始行，释放时计算目标行 → reorder
+        self._drag_item: str | None = None
+        self._dragging: bool = False
+        self._drag_start_y: int = 0
+        self.tree.bind("<ButtonPress-1>", self._on_tree_press, add="+")
+        self.tree.bind("<B1-Motion>", self._on_tree_drag, add="+")
+        self.tree.bind("<ButtonRelease-1>", self._on_tree_release, add="+")
 
     def _build_monitors_section(self, parent):
         th = current_theme()
@@ -458,7 +490,97 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
     def _on_move_down(self):
         self._move_step(1)
 
+    def _on_duplicate(self) -> None:
+        """复制当前步骤：副本插入到其后，并选中新副本。"""
+        if not self.controller:
+            return
+        idx = self.step_ring.selected_index() if self.step_ring else None
+        if idx is None:
+            return
+        try:
+            new_idx = self.controller.duplicate_step(idx)
+        except RuntimeError:
+            messagebox.showwarning(t("common.hint"), t("chain.msg.executor_busy"))
+            return
+        if new_idx >= 0 and self.step_ring:
+            self.step_ring.select(new_idx)
+        self._on_step_selected()
+
+    def _on_move_to_index(self, target: int) -> None:
+        """把当前步骤 insert 移动到 target（0-based），其余顺延。"""
+        if not self.controller:
+            return
+        idx = self.step_ring.selected_index() if self.step_ring else None
+        if idx is None:
+            return
+        steps = self.model.get_steps()
+        if not (0 <= target < len(steps)) or target == idx:
+            return
+        try:
+            self.controller.move_to_index(idx, target)
+        except RuntimeError:
+            messagebox.showwarning(t("common.hint"), t("chain.msg.executor_busy"))
+            return
+        if self.step_ring:
+            self.step_ring.select(target)
+        self._on_step_selected()
+
     # ── 辅助 ──
+
+    def _selected_step_indices(self) -> list[int]:
+        """tree 当前选中行的索引（升序、去重）。"""
+        return sorted({self.tree.index(it) for it in self.tree.selection()})
+
+    def _apply_reorder(self, new_order: list[int]) -> None:
+        if not self.controller:
+            return
+        try:
+            self.controller.reorder_steps(new_order)
+        except RuntimeError:
+            messagebox.showwarning(t("common.hint"), t("chain.msg.executor_busy"))
+
+    def _on_move_top(self) -> None:
+        rows = self._selected_step_indices()
+        if not rows:
+            return
+        self._apply_reorder(build_top_order(len(self.model.get_steps()), rows))
+
+    def _on_move_bottom(self) -> None:
+        rows = self._selected_step_indices()
+        if not rows:
+            return
+        self._apply_reorder(build_bottom_order(len(self.model.get_steps()), rows))
+
+    def _on_move_batch(self, delta: int) -> None:
+        rows = self._selected_step_indices()
+        if not rows:
+            return
+        self._apply_reorder(build_batch_move_order(len(self.model.get_steps()), rows, delta))
+
+    def _on_tree_press(self, event) -> None:
+        self._drag_item = self.tree.identify_row(event.y)
+        self._dragging = False
+        self._drag_start_y = event.y
+
+    def _on_tree_drag(self, event) -> None:
+        if abs(event.y - self._drag_start_y) > 6:
+            self._dragging = True
+
+    def _on_tree_release(self, event) -> None:
+        drag_item = self._drag_item
+        dragging = self._dragging
+        self._drag_item = None
+        self._dragging = False
+        if not dragging or drag_item is None or not self.controller:
+            return
+        target_item = self.tree.identify_row(event.y)
+        children = list(self.tree.get_children())
+        if drag_item not in children or target_item is None or target_item not in children:
+            return
+        src = children.index(drag_item)
+        target = children.index(target_item)
+        if src != target:
+            self._apply_reorder(build_move_order(len(children), src, target))
 
     def _append_log(self, msg: str) -> None:
         if self._ring_log:
