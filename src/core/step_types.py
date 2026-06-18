@@ -19,6 +19,58 @@ from src.core.action import ActionType, DetectMode, FoundAction, MatchStrategy, 
 from src.utils.i18n import t
 
 
+# ── 字段值翻译注册表(单一事实源)──────────────────────────────────
+# Enum.name 或 str 值 → i18n key。describe() 与 step_param_view.format_field_value
+# 共用,杜绝双份维护。key 必须在 translations/{zh,en}.json 中成对存在。
+_FIELD_VALUE_I18N: dict[str, dict[str, str]] = {
+    "found_action": {
+        "LEFT_CLICK": "dialog.found_action.left_click",
+        "RIGHT_CLICK": "dialog.found_action.right_click",
+        "LEFT_DOUBLE_CLICK": "dialog.found_action.left_double_click",
+        "RIGHT_DOUBLE_CLICK": "dialog.found_action.right_double_click",
+        "LONG_PRESS": "dialog.found_action.long_press",
+        "DRAG_TO": "dialog.found_action.drag_to",
+        "ONLY_MOVE": "dialog.found_action.only_move",
+        "OUTPUT_COORD": "dialog.found_action.output_coord",
+    },
+    "detect_mode": {
+        "WAIT_UNTIL_FOUND": "dialog.detect_mode.wait_until_found",
+        "SKIP_IF_NOT_FOUND": "dialog.detect_mode.skip_if_not_found",
+        "FAIL_IF_NOT_FOUND": "dialog.detect_mode.fail_if_not_found",
+    },
+    "match_strategy": {
+        "ADAPTIVE": "dialog.match_strategy.adaptive",
+        "FIRST_MATCH": "dialog.match_strategy.first_match",
+        "BEST_CONFIDENCE": "dialog.match_strategy.best_confidence",
+    },
+    "threshold_mode": {
+        "GLOBAL": "dialog.threshold_mode.global",
+        "AUTO": "dialog.threshold_mode.auto",
+        "PER_TEMPLATE": "dialog.threshold_mode.per_template",
+    },
+    "combo_mode": {
+        "hold_tap": "common.mode.hold_tap",
+        "sequence": "common.mode.sequence",
+        "all_hold": "common.mode.all_hold",
+    },
+    # 鼠标按键:复用既有 dialog.btn.*(左键/右键/中键),DRY
+    "button": {
+        "left": "dialog.btn.left",
+        "right": "dialog.btn.right",
+        "middle": "dialog.btn.middle",
+    },
+    "color_mode": {
+        "hsv": "dialog.color_mode.hsv",
+        "rgb": "dialog.color_mode.rgb",
+    },
+}
+
+
+def field_value_i18n_key(field_name: str, raw: str) -> str | None:
+    """返回字段原始值(Enum.name 或 str 值)对应的 i18n key;无映射返回 None。"""
+    return _FIELD_VALUE_I18N.get(field_name, {}).get(raw)
+
+
 @dataclass
 class BaseStep(ABC):
     """所有步骤类型的抽象基类。"""
@@ -68,19 +120,8 @@ class ClickImageStep(BaseStep):
     threshold_mode: ThresholdMode = ThresholdMode.GLOBAL
 
     def describe(self) -> str:
-
         name = os.path.basename(self.image_path) if self.image_path else t("common.not_set")
-        fa_keys = {
-            "LEFT_CLICK": "dialog.found_action.left_click",
-            "RIGHT_CLICK": "dialog.found_action.right_click",
-            "LEFT_DOUBLE_CLICK": "dialog.found_action.left_double_click",
-            "RIGHT_DOUBLE_CLICK": "dialog.found_action.right_double_click",
-            "LONG_PRESS": "dialog.found_action.long_press",
-            "DRAG_TO": "dialog.found_action.drag_to",
-            "ONLY_MOVE": "dialog.found_action.only_move",
-            "OUTPUT_COORD": "dialog.found_action.output_coord",
-        }
-        action_label = t(fa_keys.get(self.found_action.name, ""))
+        action_label = t(field_value_i18n_key("found_action", self.found_action.name) or "")
         return t("action.describe.click_image", name=name, action=action_label)
 
 
@@ -275,13 +316,7 @@ class KeyComboStep(BaseStep):
     hold_duration: float = 0.0
 
     def describe(self) -> str:
-
-        mode_map = {
-            "hold_tap": "common.mode.hold_tap",
-            "sequence": "common.mode.sequence",
-            "all_hold": "common.mode.all_hold",
-        }
-        mode_name = t(mode_map.get(self.combo_mode, ""))
+        mode_name = t(field_value_i18n_key("combo_mode", self.combo_mode) or "")
         return t("action.describe.key_combo", keys=self.combo_keys, mode=mode_name)
 
 

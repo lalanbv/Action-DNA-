@@ -253,6 +253,8 @@
     "dialog.btn.select_image": "Select Image...",
     "dialog.btn.test_drag": "Test Drag (Execute once)",
     "dialog.btn.test_move": "Test Move (Execute once)",
+    "dialog.color_mode.hsv": "HSV Color Space",
+    "dialog.color_mode.rgb": "RGB Color Space",
     "dialog.compound_mode.and": "All AND",
     "dialog.compound_mode.none": "None",
     "dialog.compound_mode.not": "Not",

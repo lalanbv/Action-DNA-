@@ -9,6 +9,7 @@ from src.core.monitor import MonitorConfig
 from src.core.events import TypedEventBus
 from src.core.events.event_names import EventName
 from src.core.step_types import BaseStep, STEP_CLASSES
+from src.panel.components.step_param_view import build_move_order
 from src.panel.models.enums import EdgeLabel
 from src.utils.i18n import t
 
@@ -73,8 +74,11 @@ class ChainModel:
 
     # ── 线性步骤操作（向后兼容 UI）───────────────────────────
 
-    def add_step(self, step: BaseStep) -> None:
-        """在线性序列末尾添加一个 ACTION 节点（插在 END 之前）"""
+    def _append_action_node(self, step: BaseStep) -> str:
+        """内部：在 END 前追加一个 ACTION 节点，返回新 node_id（不发事件）。
+
+        供 ``add_step`` / ``duplicate_step`` 复用，避免组合操作时多次 emit。
+        """
         # 找到指向 END 的最后一条 default 边
         prev_id = self._find_node_before_end()
         new_node_id = FlowGraph.new_id("a")
@@ -86,10 +90,13 @@ class ChainModel:
             enabled=step.enabled,
         )
         self.graph.add_node(new_node)
-
         # 修改 prev -> END 为 prev -> new_node -> END
         self._reroute_to_end(prev_id, new_node_id)
+        return new_node_id
 
+    def add_step(self, step: BaseStep) -> None:
+        """在线性序列末尾添加一个 ACTION 节点（插在 END 之前）"""
+        self._append_action_node(step)
         self._mark_dirty()
         self._bus.emit(EventName.CHAIN_STEPS_CHANGED)
 
@@ -154,43 +161,57 @@ class ChainModel:
             self._mark_dirty()
             self._bus.emit(EventName.CHAIN_STEPS_CHANGED)
 
-    def reorder_steps(self, new_order: list[int]) -> None:
-        """按 new_order（原索引的新排列）insert 语义重排所有 ACTION 节点内容。
+    def _reorder_action_nodes(self, new_order: list[int]) -> None:
+        """内部：按 new_order 重排 ACTION 节点的步骤相关状态（不发事件）。
 
-        new_order[i] = 新序列位置 i 应承载的原步骤索引。
-        仅交换节点承载的 action/comment/enabled，不动 DAG 边——与既有
-        ``move_step`` 的「交换内容」模式一致，零拓扑风险。
-        非合法排列（长度不符或非 0..n-1）时静默忽略。
+        搬运 action/comment/enabled/breakpoint/error_config；非合法排列忽略。
         """
         action_nodes = self.graph.action_nodes()
         n = len(action_nodes)
         if len(new_order) != n or sorted(new_order) != list(range(n)):
             return  # 非合法排列，保持原序
-        old = [(nd.action, nd.comment, nd.enabled) for nd in action_nodes]
+        old = [
+            (nd.action, nd.comment, nd.enabled, nd.breakpoint, nd.error_config)
+            for nd in action_nodes
+        ]
         for node, old_idx in zip(action_nodes, new_order):
-            action, comment, enabled = old[old_idx]
+            action, comment, enabled, bp, ec = old[old_idx]
             node.action = action
             node.comment = comment
             node.enabled = enabled
+            node.breakpoint = bp
+            node.error_config = ec
+
+    def reorder_steps(self, new_order: list[int]) -> None:
+        """按 new_order（原索引的新排列）insert 语义重排所有 ACTION 节点内容。
+
+        new_order[i] = 新序列位置 i 应承载的原步骤索引。
+        搬运每个 ACTION 节点的全部「步骤相关」状态——action/comment/enabled
+        以及节点级 ``breakpoint``/``error_config``，使它们随步骤走到新槽位
+        （否则断点/错误策略会留在原 node 槽位，落到搬来的另一步骤上）。
+        不动 DAG 边；pos_x/pos_y/fsm_* 等节点固有属性不搬。
+        非合法排列（长度不符或非 0..n-1）时静默忽略。
+        """
+        self._reorder_action_nodes(new_order)
         self._mark_dirty()
         self._bus.emit(EventName.CHAIN_STEPS_CHANGED)
 
     def duplicate_step(self, index: int) -> int:
         """深拷贝步骤，副本插入到 index 之后，返回副本新索引；越界返回 -1。
 
-        实现：先 ``add_step`` 追加到末尾，再用 ``reorder_steps`` 把副本
-        插入式移动到 index+1（复用 insert 语义重排）。
+        用内部 ``_append_action_node`` + ``_reorder_action_nodes`` 组合，
+        只发一次 CHAIN_STEPS_CHANGED，避免双 emit 导致的 UI 选中闪烁。
         """
         import copy
         steps = self.get_steps()
         if not (0 <= index < len(steps)):
             return -1
-        self.add_step(copy.deepcopy(steps[index]))  # 副本暂在末尾
+        self._append_action_node(copy.deepcopy(steps[index]))  # 副本暂在末尾
         n = len(self.get_steps())
-        new_order = list(range(n))
-        last = new_order.pop()  # 副本当前在末尾
-        new_order.insert(index + 1, last)  # 移到 index+1
-        self.reorder_steps(new_order)
+        # 副本（末尾 n-1）insert 移动到 index+1
+        self._reorder_action_nodes(build_move_order(n, n - 1, index + 1))
+        self._mark_dirty()
+        self._bus.emit(EventName.CHAIN_STEPS_CHANGED)  # 单次 emit
         return index + 1
 
     def clear_steps(self) -> None:

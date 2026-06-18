@@ -506,18 +506,18 @@ class ActionChainPage(TkActionChainProfileMixin, BasePage, ProportionalTreeMixin
             self.step_ring.select(new_idx)
         self._on_step_selected()
 
-    def _on_move_to_index(self, target: int) -> None:
-        """把当前步骤 insert 移动到 target（0-based），其余顺延。"""
+    def _on_move_to_index(self, source: int, target: int) -> None:
+        """把 source 步骤 insert 移动到 target（0-based），其余顺延。
+
+        source 由详情面板渲染时捕获，避免依赖可能已变化的当前选中。
+        """
         if not self.controller:
             return
-        idx = self.step_ring.selected_index() if self.step_ring else None
-        if idx is None:
-            return
         steps = self.model.get_steps()
-        if not (0 <= target < len(steps)) or target == idx:
+        if not (0 <= source < len(steps)) or not (0 <= target < len(steps)) or source == target:
             return
         try:
-            self.controller.move_to_index(idx, target)
+            self.controller.move_to_index(source, target)
         except RuntimeError:
             messagebox.showwarning(t("common.hint"), t("chain.msg.executor_busy"))
             return

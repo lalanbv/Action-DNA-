@@ -16,8 +16,10 @@ import sys
 import pytest
 
 try:
+    from PySide6.QtCore import QEvent
     from PySide6.QtWidgets import (
-        QApplication, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget,
+        QApplication, QLabel, QLineEdit, QPushButton, QSpinBox, QToolButton,
+        QVBoxLayout, QWidget,
     )
 except ImportError:
     pytest.skip("PySide6 not installed", allow_module_level=True)
@@ -26,6 +28,17 @@ os.environ.setdefault("DNA_GUI_BACKEND", "qt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 _qt_app = QApplication.instance() or QApplication(sys.argv)
+
+
+def _flush_deletes() -> None:
+    """模拟运行中事件循环：processEvents 不刷 DeferredDelete，须显式发送。
+
+    ``deleteLater`` 投递的 DeferredDelete 事件在真实 ``app.exec()`` 循环里会被
+    持续处理，但测试中 ``processEvents()`` 不会刷它 —— 必须显式
+    ``sendPostedEvents(None, DeferredDelete)`` 才能真正释放 widget。
+    """
+    _qt_app.processEvents()
+    _qt_app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 from src.core.action import ActionType  # noqa: E402
 from src.core.step_types import STEP_CLASSES  # noqa: E402
@@ -103,3 +116,50 @@ def test_describe_summary_rendered(page: _FakePage) -> None:
     page._show_step_props(step, 0, 2)
     labels = page._labels()
     assert any("2" in t for t in labels)  # describe 含 wait 秒数
+
+
+def test_clear_props_frees_layout_item_widgets_on_rerender(page: _FakePage) -> None:
+    """回归: _clear_props 必须递归释放 addLayout 子布局内的 widget。
+
+    旧实现仅 deleteLater ``widget()`` 项，对 ``addLayout`` 加入的子布局
+    （按钮行 / 移动行）返回的 layout 项（widget() 为 None）直接跳过，
+    导致其内部 QPushButton/QSpinBox 在每次重渲染累积泄漏。
+    """
+    step = STEP_CLASSES[ActionType.WAIT]()
+    # total=3 → 触发「移动到序号」行；按钮行始终存在；两者均为子布局
+    page._show_step_props(step, 0, 3)
+    _flush_deletes()  # 刷新首轮 deleteLater（含子布局内 widget）
+    before = len(page._host.findChildren(QPushButton))
+
+    page._show_step_props(step, 0, 3)  # 重渲染 → _clear_props 应释放上一轮全部 widget
+    _flush_deletes()
+    after = len(page._host.findChildren(QPushButton))
+
+    assert before == after, f"子布局 widget 泄漏: {before} → {after}"
+
+
+def test_reorderable_tree_drop_uses_half_row_block_order() -> None:
+    """dropEvent 须用半行定位(drop_insert_target)+ 块 insert(build_block_insert_order)。"""
+    import inspect
+
+    from src.panel.qt_backend.pages import action_chain_page as mod
+
+    src = inspect.getsource(mod._ReorderableTreeWidget.dropEvent)
+    assert "drop_insert_target" in src, "须用 drop_insert_target 做半行定位"
+    assert "build_block_insert_order" in src, "须用 build_block_insert_order 处理选中块"
+    assert "_drag_rows[0]" not in src, "不得退回只移首行的旧写法"
+    assert "visualItemRect" in src, "须按光标半行位置决定 before/after"
+
+
+def test_props_inputs_and_buttons_use_objectname(page: _FakePage) -> None:
+    """输入框/按钮走 objectName + 全局 QSS,不再用局部 setStyleSheet(_control_qss)。"""
+    step = STEP_CLASSES[ActionType.CLICK_IMAGE]()
+    page._show_step_props(step, 0, 3)
+
+    inputs = page._host.findChildren(QLineEdit) + page._host.findChildren(QSpinBox)
+    assert any(w.objectName() == "dnaDetailInput" for w in inputs), "备注/序号输入框须 dnaDetailInput"
+
+    btns = page._host.findChildren(QPushButton)
+    names = {w.objectName() for w in btns}
+    assert "dnaDetailBtn" in names, "常规按钮须 dnaDetailBtn"
+    assert "dnaDeleteBtn" in names, "删除按钮须 dnaDeleteBtn"

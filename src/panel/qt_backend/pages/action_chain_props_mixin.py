@@ -9,8 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.panel.canvas.theme import current_theme, node_fill_color
-from src.panel.components.step_key_fields import key_fields_for
-from src.panel.components.step_param_view import format_field_value, iter_all_fields
+from src.panel.components.step_param_view import iter_all_fields, key_field_rows
 from src.panel.qt_backend.scale import qt_scale_manager
 from src.utils.i18n import t
 
@@ -33,13 +32,26 @@ class QtActionChainPropsMixin:
 
     # ── 属性面板 ──────────────────────────────────────────
 
-    def _clear_props(self):
-        layout = self._props_layout
+    def _clear_props(self) -> None:
+        """清空属性面板（递归释放 widget 与子布局项）。
+
+        Qt 的 ``takeAt`` 对 ``addLayout`` 加入的子布局返回 layout 项
+        （``widget()`` 为 None）；旧实现仅 ``deleteLater`` widget 项，
+        导致按钮行/移动行等子布局及其内部 widget 在重渲染时泄漏。
+        """
+        self._clear_layout(self._props_layout)
+
+    def _clear_layout(self, layout) -> None:
+        """递归移除并释放 layout 内全部 widget / 子布局项。"""
         while layout.count() > 0:
             item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                sub = item.layout()
+                if sub is not None:
+                    self._clear_layout(sub)
 
     def _show_empty_props(self):
         self._clear_props()
@@ -52,88 +64,25 @@ class QtActionChainPropsMixin:
         self._props_layout.addStretch()
 
     def _show_step_props(self, step, index: int, total: int):
-        """渲染步骤详情：类型/序号 + 摘要 + 移动到序号 + 关键参数 + 全部字段 + 启用/备注 + 操作按钮。"""
+        """渲染步骤详情：类型/序号 + 摘要 + 移动序号 + 关键参数 + 全部字段 + 启用/备注 + 操作按钮。"""
         self._clear_props()
         th = current_theme()
         sm = qt_scale_manager()
 
-        # 1. 类型胶囊 + 序号
-        type_name = step.action_type.value if hasattr(step.action_type, "value") else str(step.action_type)
-        pill = QLabel(f"  {type_name}  ")
-        pill.setStyleSheet(f"""
-            background-color: {node_fill_color("ACTION")};
-            color: {th.text_on_accent_bright};
-            font-weight: bold; font-size: {sm.s(9)}px;
-            border-radius: 3px; padding: 2px 6px;
-        """)
-        self._props_layout.addWidget(pill)
-
-        desc = QLabel(f"#{index + 1} / {total}")
-        desc.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
-        self._props_layout.addWidget(desc)
-
-        # 2. describe 摘要（修历史漏渲染 bug —— Qt 端此前缺失此行）
-        summary = step.describe() if hasattr(step, "describe") else ""
-        if summary:
-            sum_label = QLabel(summary)
-            sum_label.setWordWrap(True)
-            sum_label.setStyleSheet(f"color: {th.text_primary}; font-size: {sm.s(10)}px;")
-            self._props_layout.addWidget(sum_label)
-
-        # 3. 移动到指定序号（多于 1 步时才显示）
+        self._add_type_header(step, index, total, th, sm)
+        self._add_summary(step, th, sm)
         if total > 1:
             self._props_layout.addLayout(self._build_move_to_row(index, total, th, sm))
-
-        # 4. 关键参数表（默认展开）
-        kf = key_fields_for(step)
-        if kf:
+        rows = key_field_rows(step)
+        if rows:
             self._add_section_title(t("chain.detail.key_fields"))
-            rows = [(t(i18n_key), format_field_value(step, fname)) for fname, i18n_key in kf]
             self._props_layout.addWidget(self._build_param_grid(rows, th, sm, sm.s(9)))
-
-        # 5. 全部字段（默认折叠）
         all_pairs = list(iter_all_fields(step))
         if all_pairs:
             self._add_collapsible_fields(all_pairs, th, sm)
-
-        # 6. 启用
-        enable_cb = QCheckBox(t("common.enabled"))
-        enable_cb.setChecked(step.enabled)
-        enable_cb.setStyleSheet(f"color: {th.text_primary};")
-        enable_cb.stateChanged.connect(
-            lambda state, s=step: (setattr(s, "enabled", bool(state)), self._on_step_enabled_change()),
-        )
-        self._props_layout.addWidget(enable_cb)
-
-        # 7. 备注
-        comment_label = QLabel(f"{t('chain.col.comment')}:")
-        comment_label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
-        self._props_layout.addWidget(comment_label)
-        comment_edit = QLineEdit(step.comment or "")
-        comment_edit.setStyleSheet(self._input_style(th, sm))
-        comment_edit.textChanged.connect(lambda text: setattr(step, "comment", text))
-        self._props_layout.addWidget(comment_edit)
-
-        # 8. 按钮：↑ ↓ 复制 编辑 删除
-        btn_row = QHBoxLayout()
-        btn_style = self._btn_style(th, sm)
-        for text, handler in [
-            ("↑", self._on_move_up),
-            ("↓", self._on_move_down),
-            (t("common.duplicate"), self._on_duplicate),
-            (t("common.edit"), self._on_edit_step),
-        ]:
-            b = QPushButton(text)
-            b.setStyleSheet(btn_style)
-            b.clicked.connect(handler)
-            btn_row.addWidget(b)
-
-        del_btn = QPushButton(t("common.delete"))
-        del_btn.setStyleSheet(self._delete_btn_style(th, sm))
-        del_btn.clicked.connect(self._on_delete_step)
-        btn_row.addWidget(del_btn)
-        self._props_layout.addLayout(btn_row)
-
+        self._add_enable_row(step, th, sm)
+        self._add_comment_row(step, th, sm)
+        self._props_layout.addLayout(self._build_action_buttons(th, sm))
         self._props_layout.addStretch()
 
     # ── 渲染 helper ──────────────────────────────────────────
@@ -147,6 +96,31 @@ class QtActionChainPropsMixin:
         )
         self._props_layout.addWidget(title)
 
+    def _add_type_header(self, step, index: int, total: int, th, sm) -> None:
+        """类型胶囊 + 序号。"""
+        type_name = step.action_type.value if hasattr(step.action_type, "value") else str(step.action_type)
+        pill = QLabel(f"  {type_name}  ")
+        pill.setStyleSheet(f"""
+            background-color: {node_fill_color("ACTION")};
+            color: {th.text_on_accent_bright};
+            font-weight: bold; font-size: {sm.s(9)}px;
+            border-radius: 3px; padding: 2px 6px;
+        """)
+        self._props_layout.addWidget(pill)
+        desc = QLabel(f"#{index + 1} / {total}")
+        desc.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
+        self._props_layout.addWidget(desc)
+
+    def _add_summary(self, step, th, sm) -> None:
+        """describe 摘要（修历史漏渲染 bug —— Qt 端此前缺失此行）。"""
+        summary = step.describe() if hasattr(step, "describe") else ""
+        if not summary:
+            return
+        label = QLabel(summary)
+        label.setWordWrap(True)
+        label.setStyleSheet(f"color: {th.text_primary}; font-size: {sm.s(10)}px;")
+        self._props_layout.addWidget(label)
+
     def _build_move_to_row(self, index: int, total: int, th, sm) -> QHBoxLayout:
         row = QHBoxLayout()
         label = QLabel(t("chain.detail.move_to"))
@@ -156,13 +130,13 @@ class QtActionChainPropsMixin:
         spin.setRange(1, total)
         spin.setValue(index + 1)
         spin.setFixedHeight(sm.s(22))
-        spin.setStyleSheet(self._input_style(th, sm))
+        spin.setObjectName("dnaDetailInput")
         row.addWidget(spin)
         confirm = QPushButton(t("chain.detail.move_confirm"))
         confirm.setFixedHeight(sm.s(22))
-        confirm.setStyleSheet(self._btn_style(th, sm))
-        # 实时读取 SpinBox 值（1-based → 0-based target）
-        confirm.clicked.connect(lambda _c, sp=spin: self._on_move_to_index(sp.value() - 1))
+        confirm.setObjectName("dnaDetailBtn")
+        # 捕获渲染时 index 作 source，避免用户改 SpinBox 后切换选中导致 source 错位
+        confirm.clicked.connect(lambda _c, sp=spin, src=index: self._on_move_to_index(src, sp.value() - 1))
         row.addWidget(confirm)
         row.addStretch()
         return row
@@ -209,49 +183,42 @@ class QtActionChainPropsMixin:
         self._props_layout.addWidget(toggle)
         self._props_layout.addWidget(body)
 
-    # ── 样式 helper（随主题刷新）──────────────────────────────
+    def _add_enable_row(self, step, th, sm) -> None:
+        """启用复选框。"""
+        cb = QCheckBox(t("common.enabled"))
+        cb.setChecked(step.enabled)
+        cb.setStyleSheet(f"color: {th.text_primary};")
+        cb.stateChanged.connect(
+            lambda state, s=step: (setattr(s, "enabled", bool(state)), self._on_step_enabled_change()),
+        )
+        self._props_layout.addWidget(cb)
 
-    def _input_style(self, th, sm) -> str:
-        return f"""
-            QLineEdit, QSpinBox {{
-                background-color: {th.input_bg};
-                color: {th.text_primary};
-                border: 1px solid {th.border_default};
-                border-radius: 3px;
-                padding: 2px 4px;
-                font-size: {sm.s(10)}px;
-            }}
-            QLineEdit:focus, QSpinBox:focus {{ border-color: {th.accent_blue}; }}
-        """
+    def _add_comment_row(self, step, th, sm) -> None:
+        """备注输入框。"""
+        label = QLabel(f"{t('chain.col.comment')}:")
+        label.setStyleSheet(f"color: {th.text_muted}; font-size: {sm.s(9)}px;")
+        self._props_layout.addWidget(label)
+        edit = QLineEdit(step.comment or "")
+        edit.setObjectName("dnaDetailInput")
+        edit.textChanged.connect(lambda text: setattr(step, "comment", text))
+        self._props_layout.addWidget(edit)
 
-    def _btn_style(self, th, sm) -> str:
-        return f"""
-            QPushButton {{
-                background-color: {th.btn_bg};
-                color: {th.text_primary};
-                border: 1px solid {th.border_default};
-                border-radius: 3px;
-                padding: {sm.s(4)}px;
-                font-size: {sm.s(10)}px;
-            }}
-            QPushButton:hover {{
-                background-color: {th.btn_bg_hover};
-                border-color: {th.accent_blue};
-            }}
-        """
+    def _build_action_buttons(self, th, sm) -> QHBoxLayout:
+        """操作按钮行：↑ ↓ 复制 编辑 删除。"""
+        row = QHBoxLayout()
+        for text, handler in [
+            ("↑", self._on_move_up),
+            ("↓", self._on_move_down),
+            (t("common.duplicate"), self._on_duplicate),
+            (t("common.edit"), self._on_edit_step),
+        ]:
+            b = QPushButton(text)
+            b.setObjectName("dnaDetailBtn")
+            b.clicked.connect(handler)
+            row.addWidget(b)
 
-    def _delete_btn_style(self, th, sm) -> str:
-        return f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {th.accent_red};
-                border: 1px solid {th.accent_red};
-                border-radius: 3px;
-                padding: {sm.s(4)}px;
-                font-size: {sm.s(10)}px;
-            }}
-            QPushButton:hover {{
-                background-color: {th.accent_red};
-                color: white;
-            }}
-        """
+        del_btn = QPushButton(t("common.delete"))
+        del_btn.setObjectName("dnaDeleteBtn")
+        del_btn.clicked.connect(self._on_delete_step)
+        row.addWidget(del_btn)
+        return row

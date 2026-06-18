@@ -160,12 +160,12 @@ class TkActionChainProfileMixin(ProfileOpsMixin):
     # ── 事件回调 ──
 
     def _on_steps_changed(self, **_kw):
+        # 动作链是线性 ACTION 序列：只同步 ACTION 步骤，使 tree 行索引与
+        # model 的 ACTION 索引一致（reorder/duplicate/move_to_index 都基于 ACTION 索引）。
+        # 避免旧实现 sync_nodes(ordered_nodes) 把 CONDITION/MERGE/LOOP 也显示，
+        # 导致 tree 行索引 ≠ ACTION 索引而重排错位。
         if self.step_ring and self.step_ring.is_alive():
-            display_nodes = [
-                n for n in self.model.graph.ordered_nodes()
-                if n.node_type not in (NodeType.START, NodeType.END)
-            ]
-            self.step_ring.sync_nodes(display_nodes)
+            self.step_ring.sync_steps(self.model.get_steps())
 
     def _on_chain_loaded(self, **_kw):
         self._on_steps_changed()

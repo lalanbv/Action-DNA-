@@ -6,6 +6,7 @@ from tkinter import ttk
 from src.core.action import ActionType
 from src.core.step_types import BaseStep
 from src.core.flow import FlowNode, NodeType
+from src.panel.components.step_param_view import wait_text
 from src.utils.i18n import t
 
 
@@ -40,11 +41,8 @@ def _type_label(step: BaseStep) -> str:
 
 
 def _wait_text(step: BaseStep) -> str:
-    if step.action_type == ActionType.WAIT:
-        return f"{step.wait_seconds}s"
-    if step.action_type == ActionType.WAIT_RANDOM:
-        return f"{step.wait_min}~{step.wait_max}s"
-    return "-"
+    """步骤「等待」列文案（委托共用 wait_text，Qt/tk 统一 :g 格式）。"""
+    return wait_text(step)
 
 
 def _step_values(index: int, step: BaseStep) -> tuple:

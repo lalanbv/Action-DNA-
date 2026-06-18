@@ -11,8 +11,7 @@ from typing import Callable
 from src.core.step_types import BaseStep
 from src.panel.canvas.scale import ScrollableFrame
 from src.panel.canvas.theme import CanvasTheme, current_theme
-from src.panel.components.step_key_fields import key_fields_for
-from src.panel.components.step_param_view import format_field_value, iter_all_fields
+from src.panel.components.step_param_view import iter_all_fields, key_field_rows
 from src.panel.widgets import (
     themed_button,
     themed_checkbutton,
@@ -35,7 +34,7 @@ class StepPropertyPanel(tk.Frame):
         on_delete: Callable,
         on_enabled_change: Callable | None = None,
         on_duplicate: Callable | None = None,
-        on_move_to_index: Callable[[int], None] | None = None,
+        on_move_to_index: Callable[[int, int], None] | None = None,
         width: int | None = None,
     ) -> None:
         th = current_theme()
@@ -104,21 +103,21 @@ class StepPropertyPanel(tk.Frame):
             self._build_move_to(index, total, th)
 
         # 关键参数表
-        kf = key_fields_for(step)
-        if kf:
+        rows = key_field_rows(step)
+        if rows:
             themed_label(
                 self._prop_area, text=t("chain.detail.key_fields"),
                 style="small", bg=th.panel_bg, fg=th.text_muted,
             ).pack(anchor="w", padx=th.pad_xs, pady=(th.pad_xs, 0))
-            for fname, i18n_key in kf:
+            for label_text, value_text in rows:
                 row = themed_frame(self._prop_area)
                 row.pack(fill=tk.X, padx=th.pad_xs)
                 themed_label(
-                    row, text=t(i18n_key), style="small",
+                    row, text=label_text, style="small",
                     bg=th.panel_bg, fg=th.text_muted, width=12,
                 ).pack(side=tk.LEFT)
                 themed_label(
-                    row, text=format_field_value(step, fname), style="small",
+                    row, text=value_text, style="small",
                     bg=th.panel_bg, fg=th.text_primary, wraplength=120,
                 ).pack(side=tk.LEFT, padx=(th.pad_xs, 0))
 
@@ -161,6 +160,7 @@ class StepPropertyPanel(tk.Frame):
 
     def _build_move_to(self, index: int, total: int, th: CanvasTheme) -> None:
         """「移动到序号」输入 + 确定按钮。"""
+        self._move_source = index  # 渲染时捕获 source，避免回调时选中已变
         row = themed_frame(self._prop_area)
         row.pack(fill=tk.X, padx=th.pad_xs, pady=(0, th.pad_xs))
         themed_label(
@@ -179,14 +179,14 @@ class StepPropertyPanel(tk.Frame):
         ).pack(side=tk.LEFT)
 
     def _do_move_to(self) -> None:
-        """读取序号输入（1-based → 0-based）并回调。"""
+        """读取序号输入（1-based → 0-based）并以捕获的 source 回调。"""
         if self._on_move_to_index is None:
             return
         try:
             target = int(self._move_var.get()) - 1
         except (ValueError, AttributeError):
             return
-        self._on_move_to_index(target)
+        self._on_move_to_index(self._move_source, target)
 
     def _build_collapsible(self, pairs: list[tuple[str, str]], th: CanvasTheme) -> None:
         """「全部字段」折叠区：默认收起，点击标题切换。"""

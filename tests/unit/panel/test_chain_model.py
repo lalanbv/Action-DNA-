@@ -189,6 +189,18 @@ class TestReorderSteps:
         model.reorder_steps([1, 0])
         model._bus.emit.assert_called()
 
+    def test_breakpoint_and_error_config_follow_step(self, model: ChainModel) -> None:
+        """reorder 搬运节点级 breakpoint/error_config，随步骤走到新槽位。"""
+        for at in (ActionType.WAIT, ActionType.PRESS_KEY, ActionType.WAIT_RANDOM):
+            model.add_step(_step(at))
+        nodes = model.graph.action_nodes()
+        nodes[1].breakpoint = True  # 在原 idx1(PRESS_KEY)设断点
+        model.reorder_steps([1, 0, 2])  # idx1 移到位置 0
+        new_nodes = model.graph.action_nodes()
+        assert new_nodes[0].action.action_type == ActionType.PRESS_KEY
+        assert new_nodes[0].breakpoint is True   # 断点跟随 PRESS_KEY
+        assert new_nodes[1].breakpoint is False  # 原 idx0 槽位无断点
+
 
 class TestDuplicateStep:
     """深拷贝步骤，副本插入到源之后。"""

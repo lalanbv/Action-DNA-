@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from src.core.events.event_names import EventName
+from src.panel.components.step_param_view import build_move_order
 from src.panel.controllers.base_controller import BaseController
 from src.utils.i18n import t
 
@@ -56,14 +57,10 @@ class ActionChainController(BaseController):
     def move_to_index(self, index: int, target: int) -> None:
         """把 index 处步骤 insert 移动到 target，其余顺延（非交换语义）。"""
         self._require_idle()
-        steps = self.model.get_steps()
-        n = len(steps)
+        n = len(self.model.get_steps())
         if not (0 <= index < n and 0 <= target < n) or index == target:
-            return
-        order = list(range(n))
-        moved = order.pop(index)
-        order.insert(target, moved)
-        self.model.reorder_steps(order)
+            return  # 越界/同位：显式守卫，避免 build_move_order 静默 no-op emit
+        self.model.reorder_steps(build_move_order(n, index, target))
 
     def clear_matcher_cache(self) -> None:
         self._matcher.clear_cache()

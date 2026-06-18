@@ -20,15 +20,17 @@ from PySide6.QtWidgets import (
 from src.core.action import ActionType
 from src.core.debug.ring_buffer_log import LogEventType, RingBufferLog
 from src.core.events.event_names import EventName
-from src.core.step_types import STEP_CLASSES, WaitRandomStep, WaitStep
+from src.core.step_types import STEP_CLASSES
 from src.panel.canvas.theme import current_theme, node_fill_color
 from src.panel.pages.page_registry import PAGE_HOME
 from src.panel.components.palette_data import ACTION_PALETTE, action_accent
 from src.panel.components.step_param_view import (
     build_batch_move_order,
+    build_block_insert_order,
     build_bottom_order,
-    build_move_order,
     build_top_order,
+    drop_insert_target,
+    wait_text,
 )
 from src.panel.controllers.action_chain_controller import ActionChainController
 from src.panel.models.chain_model import ChainModel, ExecutorState
@@ -76,10 +78,19 @@ class _ReorderableTreeWidget(QTreeWidget):
         pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
         target_item = self.itemAt(pos)
         n = self.topLevelItemCount()
-        target = (n - 1) if target_item is None else self.indexOfTopLevelItem(target_item)
-        new_order = build_move_order(n, self._drag_rows[0], target)
+        if target_item is None:
+            target_idx = None  # 落到所有行下方空区 → 追加末尾
+            click_below = False
+        else:
+            target_idx = self.indexOfTopLevelItem(target_item)
+            click_below = pos.y() > self.visualItemRect(target_item).center().y()
+        # 半行定位(原生 Qt 指示线语义)+ 选中块整体 insert(支持多选拖拽)
+        target = drop_insert_target(target_idx, click_below, n)
+        new_order = build_block_insert_order(n, self._drag_rows, target)
         self._drag_rows = []
         event.accept()
+        # 不调 super().dropEvent：默认会移动 widget item 而 model 未同步；
+        # 由 reordered → controller.reorder → CHAIN_STEPS_CHANGED → _refresh 重建。
         self.reordered.emit(new_order)
 
 
@@ -702,16 +713,16 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
             self._selected_step_idx = new_idx
             self._on_step_selected()
 
-    def _on_move_to_index(self, target: int) -> None:
-        """把当前步骤 insert 移动到 target（0-based），其余顺延。"""
-        idx = self._selected_step_idx
-        if idx is None:
-            return
+    def _on_move_to_index(self, source: int, target: int) -> None:
+        """把 source 步骤 insert 移动到 target（0-based），其余顺延。
+
+        source 由详情面板渲染时捕获，避免依赖可能已变化的 _selected_step_idx。
+        """
         steps = self._model.get_steps()
-        if not (0 <= target < len(steps)) or target == idx:
+        if not (0 <= source < len(steps)) or not (0 <= target < len(steps)) or source == target:
             return
         try:
-            self._controller.move_to_index(idx, target)
+            self._controller.move_to_index(source, target)
         except RuntimeError:
             self._show_warning(t("common.hint"), t("chain.msg.executor_busy"))
             return
@@ -725,14 +736,20 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
         return sorted({self._step_tree.indexOfTopLevelItem(i) for i in self._step_tree.selectedItems()})
 
     def _apply_reorder(self, new_order: list[int], focus_idx: int | None = None) -> None:
-        """应用重排（执行中被拒时提示）；可选设置重排后主选中行。"""
+        """应用重排（执行中被拒时提示）。
+
+        先设 ``_selected_step_idx=focus_idx``，使 reorder 的同步 emit 触发
+        ``_refresh_step_list`` 时即用新索引高亮/渲染，避免选中竞态；
+        RuntimeError（执行中）时恢复旧值。
+        """
+        prev = self._selected_step_idx
+        if focus_idx is not None:
+            self._selected_step_idx = focus_idx
         try:
             self._controller.reorder_steps(new_order)
         except RuntimeError:
+            self._selected_step_idx = prev
             self._show_warning(t("common.hint"), t("chain.msg.executor_busy"))
-            return
-        if focus_idx is not None:
-            self._selected_step_idx = focus_idx  # _refresh_step_list 据此恢复选中
 
     def _on_move_top(self) -> None:
         rows = self._selected_rows()
@@ -858,18 +875,8 @@ class QtActionChainPage(QtActionChainProfileMixin, QtActionChainPropsMixin, QtBa
 
     @staticmethod
     def _step_wait_text(step) -> str:
-        """步骤列表「等待」列文案。
-
-        类型化步骤无统一的 wait_time 字段(迁移前旧 ActionStep 才有):
-        - WaitStep → '{wait_seconds}s'
-        - WaitRandomStep → '{min}~{max}s'
-        - 其他 → ''(各步骤时间信息由 describe() 详情列承载)
-        """
-        if isinstance(step, WaitStep):
-            return f"{step.wait_seconds:g}s"
-        if isinstance(step, WaitRandomStep):
-            return f"{step.wait_min:g}~{step.wait_max:g}s"
-        return ""
+        """步骤列表「等待」列文案（委托共用 wait_text，Qt/tk 统一 :g 格式）。"""
+        return wait_text(step)
 
     def _refresh_step_list(self):
         if not hasattr(self, "_step_tree") or self._step_tree is None:

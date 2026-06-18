@@ -86,6 +86,43 @@ def theme_to_qss(t: CanvasTheme) -> str:
         border-radius: 3px;
     }}
 
+    /* 详情面板控件(action_chain_props_mixin)—— objectName 全局 QSS,随主题刷新 */
+    QLineEdit#dnaDetailInput, QSpinBox#dnaDetailInput {{
+        background-color: {t.input_bg};
+        color: {t.text_primary};
+        border: 1px solid {t.border_default};
+        border-radius: 3px;
+        padding: 2px {qt_scale_manager().s(4)}px;
+        font-size: {qt_scale_manager().s(10)}px;
+    }}
+    QLineEdit#dnaDetailInput:focus, QSpinBox#dnaDetailInput:focus {{
+        border-color: {t.accent_blue};
+    }}
+    QPushButton#dnaDetailBtn {{
+        background-color: {t.btn_bg};
+        color: {t.text_primary};
+        border: 1px solid {t.border_default};
+        border-radius: 3px;
+        padding: {qt_scale_manager().s(4)}px;
+        font-size: {qt_scale_manager().s(10)}px;
+    }}
+    QPushButton#dnaDetailBtn:hover {{
+        background-color: {t.btn_bg_hover};
+        border-color: {t.accent_blue};
+    }}
+    QPushButton#dnaDeleteBtn {{
+        background-color: transparent;
+        color: {t.accent_red};
+        border: 1px solid {t.accent_red};
+        border-radius: 3px;
+        padding: {qt_scale_manager().s(4)}px;
+        font-size: {qt_scale_manager().s(10)}px;
+    }}
+    QPushButton#dnaDeleteBtn:hover {{
+        background-color: {t.accent_red};
+        color: white;
+    }}
+
     /* ── 标签 ── */
     QLabel {{
         background: transparent;

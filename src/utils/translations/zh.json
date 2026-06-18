@@ -252,6 +252,8 @@
     "dialog.btn.select_image": "选择图片...",
     "dialog.btn.test_drag": "测试拖拽（立即执行一次）",
     "dialog.btn.test_move": "测试移动（立即执行一次）",
+    "dialog.color_mode.hsv": "HSV 色彩空间",
+    "dialog.color_mode.rgb": "RGB 色彩空间",
     "dialog.compound_mode.and": "全部满足 AND",
     "dialog.compound_mode.none": "无",
     "dialog.compound_mode.not": "取反 NOT",
