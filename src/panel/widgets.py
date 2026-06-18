@@ -146,7 +146,7 @@ def themed_radiobutton(
 
     t = current_theme()
     kw.setdefault("bg", _inherit_bg(parent, t.page_bg))
-    return DNAToggle(parent, text=text, mode="radio", **kw)
+    return DNAToggle(cast(tk.Widget, parent), text=text, mode="radio", **kw)
 
 
 def themed_dropdown(
@@ -156,7 +156,7 @@ def themed_dropdown(
 ) -> DNADropdown:
     from src.panel.components.dna_dropdown import DNADropdown
 
-    return DNADropdown(parent, options=options, **kw)
+    return DNADropdown(cast(tk.Widget, parent), options=options, **kw)
 
 
 def themed_labelframe(
