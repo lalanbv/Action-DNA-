@@ -258,9 +258,16 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
         # 不依赖视觉的步骤仍可执行。热键/插件/监控为非致命增强,各自隔离失败。
         logger.info("[boot] phase3 进入(executor/热键/插件/监控)")
         try:
+            # 细粒度心跳:逐 import / 逐构造各打一行。历史卡死日志停在「phase3 进入」,
+            # 说明本段(259→300)有某步同步阻塞主线程(QTimer 回调);excepthook 抓不住
+            # 「阻塞」,故无堆栈。下次运行日志的最后一行即为精确卡死点。
+            logger.info("[boot] phase3.1 导入 ActionExecutor(engine/layers/monitor/fail_safe 级联)")
             from src.core.action_executor import ActionExecutor
+            logger.info("[boot] phase3.1 OK ActionExecutor 导入完成")
             from src.core.input.hotkey_manager import HotkeyManager
+            logger.info("[boot] phase3.2 OK HotkeyManager 导入完成")
             from src.core.plugins.plugin_loader import PluginLoader
+            logger.info("[boot] phase3.3 OK PluginLoader 导入完成(插件系统级联)")
             from src.core.vision.capture import ScreenCapture, TemplateMatcher
             from src.core.input import InputController
 
@@ -269,6 +276,7 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             matcher = self._safe_get_service(TemplateMatcher)
             input_ctrl = self._safe_get_service(InputController)
             event_bus = self.event_bus
+            logger.info("[boot] phase3.4 OK 服务引用就绪(capture/matcher/input/event_bus)")
 
             # executor 必须注册:即使 capture/matcher/input 为 None(降级模式)。
             # 这正是修复「点启动完全无反应」的核心 —— 保证 executor 永不为 None。
@@ -280,8 +288,10 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
                     ring_log=self.ring_log,
                 ),
             )
+            logger.info("[boot] phase3.5 即将首次构造 ActionExecutor(GraphEngine+7 Layers+FailSafe)")
             try:
                 executor = self._container.get(ActionExecutor)
+                logger.info("[boot] phase3.5 OK ActionExecutor 构造完成")
                 executor.set_main_scheduler(lambda ms, cb: self._timer.schedule(ms, cb))
             except Exception:  # noqa: BLE001
                 logger.exception("ActionExecutor 创建失败(启动按钮将给出清晰错误而非静默)")
@@ -292,12 +302,13 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
             try:
                 from src.panel.components.execution_log_bridge import ExecutionLogBridge
                 self._exec_log_bridge = ExecutionLogBridge(event_bus, self.ring_log)
+                logger.info("[boot] phase3.6 OK 执行日志桥接器就绪")
             except Exception:  # noqa: BLE001
                 logger.exception("执行日志桥接器初始化失败(非致命,跳过)")
                 self._exec_log_bridge = None
 
             # 热键、插件、监控为增强功能,失败不阻断核心执行
-            logger.info("[boot] phase3: 即将创建 HotkeyManager + 注册全局热键")
+            logger.info("[boot] phase3.7 即将创建 HotkeyManager + 注册全局热键")
             try:
                 self._container.register(HotkeyManager, HotkeyManager)
                 hotkey_mgr = self._container.get(HotkeyManager)
@@ -320,10 +331,11 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
                     on_emergency_stop=self._emergency_stop,
                     config=hotkey_cfg,
                 )
-                logger.info("[boot] phase3: 全局热键注册完成(pynput listener 已异步启动)")
+                logger.info("[boot] phase3.7 OK 全局热键注册完成(pynput listener 已异步启动)")
             except Exception:  # noqa: BLE001
                 logger.exception("热键管理器初始化失败(非致命,跳过)")
 
+            logger.info("[boot] phase3.8 即将创建 PluginLoader + 加载插件")
             try:
                 node_registry = self.node_registry
                 self._container.register(
@@ -338,12 +350,15 @@ class QtPanelApp(ServiceProviderMixin, ThemeCallbackMixin, QMainWindow):
                 )
                 self._container.get(PluginLoader)
                 self._init_plugins()
+                logger.info("[boot] phase3.8 OK 插件加载完成")
             except Exception:  # noqa: BLE001
                 logger.exception("插件加载器初始化失败(非致命,跳过)")
 
+            logger.info("[boot] phase3.9 即将启动监控事件 + 轮询定时器")
             try:
                 self._setup_monitor_events()
                 self._start_monitor_poll()
+                logger.info("[boot] phase3.9 OK 监控启动完成")
             except Exception:  # noqa: BLE001
                 logger.exception("监控初始化失败(非致命,跳过)")
         except Exception:  # noqa: BLE001
