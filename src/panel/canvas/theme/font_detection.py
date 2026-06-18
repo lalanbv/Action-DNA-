@@ -20,8 +20,7 @@ def _get_available_families() -> set[str]:
             from PySide6.QtWidgets import QApplication
             app = QApplication.instance()
             if app is not None:
-                db = QFontDatabase()
-                _available_families = set(db.families())
+                _available_families = set(QFontDatabase.families())
                 return _available_families
         except ImportError:
             pass

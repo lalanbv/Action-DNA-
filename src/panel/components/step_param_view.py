@@ -39,21 +39,14 @@ def build_block_insert_order(n: int, selected: list[int], target: int) -> list[i
     ``target`` 及之后的非选中项顺延。单选时等价于把该项插到 target 前。
     ``target == n`` 表示落到所有行下方 → 追加末尾。target 越界或无选中返回原序。
     """
-    sel = sorted(set(selected))
+    sel = sorted({s for s in selected if 0 <= s < n})
     if not sel or not (0 <= target <= n):
         return list(range(n))
     sel_set = set(sel)
-    result: list[int] = []
-    inserted = False
-    for i in range(n):
-        if i == target and not inserted:
-            result.extend(sel)
-            inserted = True
-        if i not in sel_set:
-            result.append(i)
-    if not inserted:  # target == n：块追加到末尾
-        result.extend(sel)
-    return result
+    # 非选中项保持原序;块插入位 = 原序小于 target 的非选中项个数(target==n 时为全部)
+    others = [i for i in range(n) if i not in sel_set]
+    insert_at = sum(1 for i in others if i < target)
+    return others[:insert_at] + sel + others[insert_at:]
 
 
 def drop_insert_target(target_idx: int | None, click_below_center: bool, n: int) -> int:

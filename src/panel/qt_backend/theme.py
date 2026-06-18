@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.panel.canvas.theme import CanvasTheme, current_theme
+from src.panel.canvas.theme import CanvasTheme
 from src.panel.canvas.theme.style_mappings import derive_hover_bg as _derive_hover_bg
 from src.panel.qt_backend.scale import qt_scale_manager
 
@@ -171,8 +171,8 @@ def theme_to_qss(t: CanvasTheme) -> str:
         color: {t.btn_disabled_fg};
     }}
 
-    /* ── 数值输入框 ── */
-    QSpinBox {{
+    /* ── 数值输入框(整数 QSpinBox + 浮点 QDoubleSpinBox 共用同一规格) ── */
+    QSpinBox, QDoubleSpinBox {{
         background-color: {t.input_bg};
         color: {t.input_fg};
         border: 1px solid {t.border_default};
@@ -180,19 +180,7 @@ def theme_to_qss(t: CanvasTheme) -> str:
         padding: {t.pad_xs}px {t.pad_sm}px;
         min-height: {t.button_height - 8}px;
     }}
-    QSpinBox:focus {{
-        border-color: {t.accent_blue};
-    }}
-    /* 浮点数值框(秒数/时长/速度) — 镜像 QSpinBox 保持视觉一致 */
-    QDoubleSpinBox {{
-        background-color: {t.input_bg};
-        color: {t.input_fg};
-        border: 1px solid {t.border_default};
-        border-radius: 4px;
-        padding: {t.pad_xs}px {t.pad_sm}px;
-        min-height: {t.button_height - 8}px;
-    }}
-    QDoubleSpinBox:focus {{
+    QSpinBox:focus, QDoubleSpinBox:focus {{
         border-color: {t.accent_blue};
     }}
 

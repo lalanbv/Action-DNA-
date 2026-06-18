@@ -68,7 +68,8 @@ _FIELD_VALUE_I18N: dict[str, dict[str, str]] = {
 
 def field_value_i18n_key(field_name: str, raw: str) -> str | None:
     """返回字段原始值(Enum.name 或 str 值)对应的 i18n key;无映射返回 None。"""
-    return _FIELD_VALUE_I18N.get(field_name, {}).get(raw)
+    mapping = _FIELD_VALUE_I18N.get(field_name)
+    return mapping.get(raw) if mapping is not None else None
 
 
 @dataclass
@@ -146,15 +147,17 @@ class ClickPosStep(BaseStep):
 
         if self.use_coord_var and self.coord_var_name:
             return t("action.describe.click_var", name=self.coord_var_name)
-        click_labels = {
-            1: t("action.describe.single_click"),
-            2: t("action.describe.double_click"),
-            3: t("action.describe.triple_click"),
-        }
-        click_label = click_labels.get(
-            self.clicks,
-            t("action.describe.multi_click", count=self.clicks),
-        )
+        # 按 clicks 取点击次数文案:单击/双击/三击精确匹配,其余走多击模板(只算 1 次 t())
+        if self.clicks == 1:
+            click_label = t("action.describe.single_click")
+        elif self.clicks == 2:
+            click_label = t("action.describe.double_click")
+        elif self.clicks == 3:
+            click_label = t("action.describe.triple_click")
+        else:
+            click_label = t("action.describe.multi_click", count=self.clicks)
+        # 按键前缀文案(action.describe.*_prefix)是「右键-」类前缀,与 _FIELD_VALUE_I18N["button"]
+        # 的 dialog.btn.* 标签语义不同,故不复用该注册表。左键无前缀。
         button_prefix = ""
         if self.button == "right":
             button_prefix = t("action.describe.right_prefix")

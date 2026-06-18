@@ -135,28 +135,26 @@ def test_integer_spinbox_still_uses_qspinbox(qt_parent):
     _qt_app.processEvents()
 
 
-# ── 根因 B: 步骤列表等待列 ────────────────────────────────────
+# ── 根因 B: 步骤列表等待列(共享 wait_text, Qt/tk 统一) ─────────
 
 
 def test_step_wait_text_wait_step():
     """WaitStep → '{seconds}s'。"""
-    from src.panel.qt_backend.pages.action_chain_page import QtActionChainPage
+    from src.panel.components.step_param_view import wait_text
 
-    assert QtActionChainPage._step_wait_text(WaitStep(wait_seconds=2.5)) == "2.5s"
+    assert wait_text(WaitStep(wait_seconds=2.5)) == "2.5s"
 
 
 def test_step_wait_text_wait_random_step():
     """WaitRandomStep → '{min}~{max}s'。"""
-    from src.panel.qt_backend.pages.action_chain_page import QtActionChainPage
+    from src.panel.components.step_param_view import wait_text
 
-    text = QtActionChainPage._step_wait_text(
-        WaitRandomStep(wait_min=0.5, wait_max=2.0),
-    )
+    text = wait_text(WaitRandomStep(wait_min=0.5, wait_max=2.0))
     assert text == "0.5~2s", f"期望 '0.5~2s', 实际 {text!r}"
 
 
 def test_step_wait_text_other_step_is_empty():
     """非等待类步骤 → ''(时间信息由 describe() 详情列承载)。"""
-    from src.panel.qt_backend.pages.action_chain_page import QtActionChainPage
+    from src.panel.components.step_param_view import wait_text
 
-    assert QtActionChainPage._step_wait_text(PressKeyStep(key="a")) == ""
+    assert wait_text(PressKeyStep(key="a")) == ""

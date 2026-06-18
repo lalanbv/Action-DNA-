@@ -47,6 +47,7 @@ class StepPropertyPanel(tk.Frame):
         self._on_enabled_change = on_enabled_change
         self._on_duplicate = on_duplicate
         self._on_move_to_index = on_move_to_index
+        self._move_source: int = 0  # _build_move_to 渲染时捕获;默认 0 防御未渲染即回调
         self._current_step: BaseStep | None = None
         self._scroll: ScrollableFrame | None = None
         self._build(th)

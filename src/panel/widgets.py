@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from src.panel.canvas.theme import current_theme, CanvasTheme
 from src.panel.canvas.scale import scale_manager
@@ -81,7 +81,7 @@ def themed_button(
     kw.setdefault("padx", sm.s(t.pad_md))
     kw.setdefault("pady", sm.s(t.pad_xs))
     btn = LabelButton(
-        parent,
+        cast(tk.Widget, parent),
         text=text,
         command=command,
         style=style,
@@ -111,7 +111,7 @@ def themed_entry(parent: tk.Misc, **kw: Any) -> ThemedEntry:
     kw.setdefault("highlightthickness", 1)
     kw.setdefault("highlightcolor", t.accent_blue)
     kw.setdefault("highlightbackground", t.border_default)
-    return _ThemedEntry(parent, **kw)
+    return _ThemedEntry(cast(tk.Widget, parent), **kw)
 
 
 def themed_spinbox(parent: tk.Misc, **kw: Any) -> tk.Spinbox:
@@ -136,7 +136,7 @@ def themed_checkbutton(
 
     t = current_theme()
     kw.setdefault("bg", _inherit_bg(parent, t.page_bg))
-    return DNAToggle(parent, text=text, mode="checkbox", **kw)
+    return DNAToggle(cast(tk.Widget, parent), text=text, mode="checkbox", **kw)
 
 
 def themed_radiobutton(

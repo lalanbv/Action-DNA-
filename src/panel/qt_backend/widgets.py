@@ -7,7 +7,7 @@ Qt 后端利用 QSS 全局样式传播，无需手动递归应用主题。
 
 from __future__ import annotations
 
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, TypeVar
 
 from PySide6.QtGui import QFont
 
@@ -112,10 +112,17 @@ def themed_entry(parent: QWidget, **kw: Any) -> QLineEdit:
     return entry
 
 
-def themed_spinbox(parent: QWidget, **kw: Any) -> QSpinBox:
-    th = current_theme()
-    spin = QSpinBox(parent)
-    spin.setFont(_qt_font(th.font_body))
+# QSpinBox(int 重载) 与 QDoubleSpinBox(float 重载) 的 setMinimum/setValue/setSingleStep
+# 签名不兼容,联合类型直接调用会触发 mypy 报错。值约束 TypeVar 配合 kw.pop() 返回 Any
+# (Any 与任意签名双向兼容) 规避之,调用点仍保留 QSpinBox/QDoubleSpinBox 精确类型。
+_NumericSpin = TypeVar("_NumericSpin", QSpinBox, QDoubleSpinBox)
+
+
+def _configure_spinbox(spin: _NumericSpin, kw: dict[str, Any]) -> _NumericSpin:
+    """统一应用 QSpinBox/QDoubleSpinBox 共用 kw-pop 并返回 spin。
+
+    共用键:minimum/maximum/value/prefix/suffix/single_step/objectName。
+    """
     if "minimum" in kw:
         spin.setMinimum(kw.pop("minimum"))
     if "maximum" in kw:
@@ -132,6 +139,13 @@ def themed_spinbox(parent: QWidget, **kw: Any) -> QSpinBox:
     if obj_name:
         spin.setObjectName(obj_name)
     return spin
+
+
+def themed_spinbox(parent: QWidget, **kw: Any) -> QSpinBox:
+    th = current_theme()
+    spin = QSpinBox(parent)
+    spin.setFont(_qt_font(th.font_body))
+    return _configure_spinbox(spin, kw)
 
 
 def themed_doublespinbox(parent: QWidget, **kw: Any) -> QDoubleSpinBox:
@@ -144,24 +158,10 @@ def themed_doublespinbox(parent: QWidget, **kw: Any) -> QDoubleSpinBox:
     th = current_theme()
     spin = QDoubleSpinBox(parent)
     spin.setFont(_qt_font(th.font_body))
-    # 默认 2 位小数; 调用方可经 decimals 覆盖(必须先于 setValue 设置, 否则值被按旧精度舍入)
+    # 默认 2 位小数; 调用方可经 decimals 覆盖(必须先于 _configure_spinbox 内的 setValue 设置,
+    # 否则 value 被按旧精度舍入)
     spin.setDecimals(kw.pop("decimals", 2))
-    if "minimum" in kw:
-        spin.setMinimum(kw.pop("minimum"))
-    if "maximum" in kw:
-        spin.setMaximum(kw.pop("maximum"))
-    if "value" in kw:
-        spin.setValue(kw.pop("value"))
-    if "prefix" in kw:
-        spin.setPrefix(kw.pop("prefix"))
-    if "suffix" in kw:
-        spin.setSuffix(kw.pop("suffix"))
-    if "single_step" in kw:
-        spin.setSingleStep(kw.pop("single_step"))
-    obj_name = kw.pop("objectName", "")
-    if obj_name:
-        spin.setObjectName(obj_name)
-    return spin
+    return _configure_spinbox(spin, kw)
 
 
 def themed_checkbutton(
