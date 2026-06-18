@@ -182,9 +182,17 @@ def main():
         # Preload heavy C extensions (cv2, mss, numpy, pyautogui, pynput)
         # in background while UI starts — modules land in sys.modules so
         # later imports on the main thread are instant.
-        from src.utils.preload import start_preload
+        from src.utils.preload import start_preload, ensure_preloaded
         start_preload()  # fire-and-forget; ensure_preloaded() blocks when needed
         log.info("[boot] step=preload 已派发后台线程")
+        # 主线程等待重型 C 扩展预热完成(cv2/mss/pyautogui/pynput):否则 phase2/phase3
+        # 在主线程首次 import 会与后台 preload 线程争用 Python import lock,表现为
+        # 「窗口出现后卡死」(import 阻塞非异常,excepthook/try-except 全失效)。tk 后端
+        # phase1 已 ensure_preloaded,Qt 后端(默认)缺失 —— 此处统一在 GUI 构造前同步
+        # 等待,接受启动稍慢(等预热),换取窗口出现后不卡。
+        log.info("[boot] step=preload 等待重型 C 扩展就绪(最多 15s)")
+        ensure_preloaded(timeout=15.0)
+        log.info("[boot] step=preload 预热完成(cv2/mss/pyautogui/pynput 已就绪)")
 
         from src.panel.backend_selector import use_qt_backend
         app = None
