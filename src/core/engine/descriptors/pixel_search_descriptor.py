@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from src.core.engine.node_descriptor import NodeDescriptor, PortDef
 from src.core.engine.node_registry import auto_register
 from src.core.engine.node_result import NodeResult
+from src.core.step_types import PixelSearchStep
 from src.utils.i18n import t
 
 if TYPE_CHECKING:
@@ -83,7 +84,7 @@ class PixelSearchDescriptor(NodeDescriptor):
         if pixel_searcher is None:
             return NodeResult.fail(t("engine.node_fail.pixel_searcher_not_injected"))
 
-        step = action  # type: PixelSearchStep  — 由 action_type() 约束
+        step = cast(PixelSearchStep, action)  # action_type() 约束保证此处为 PixelSearchStep
         screenshot = ctx.capture.grab()
         region = step.search_region
         mode = step.color_mode
